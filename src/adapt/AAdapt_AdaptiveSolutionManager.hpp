@@ -53,7 +53,6 @@ public:
    Teuchos::RCP<const Thyra_MultiVector> updateAndReturnOverlapSolutionMV(const Thyra_MultiVector& solution /*not overlapped*/);
 
    Teuchos::RCP<Thyra_Vector>   get_overlapped_f()   const {return overlapped_f;}
-   Teuchos::RCP<Thyra_LinearOp> get_overlapped_jac() const {return overlapped_jac;}
 
    Teuchos::RCP<const CombineAndScatterManager> get_cas_manager() const { return cas_manager; }
 
@@ -72,7 +71,6 @@ private:
     Teuchos::RCP<const CombineAndScatterManager> cas_manager;
 
     Teuchos::RCP<Thyra_Vector>   overlapped_f;
-    Teuchos::RCP<Thyra_LinearOp> overlapped_jac;
 
     // The solution directly from the discretization class
     Teuchos::RCP<Thyra_MultiVector> current_soln;

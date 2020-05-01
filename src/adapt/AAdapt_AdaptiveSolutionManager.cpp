@@ -226,7 +226,6 @@ AdaptiveSolutionManager::resizeMeshDataArrays(
   //       You need to figure out how to pass the graph in a Tpetra-free way
   //       though...
   overlapped_f = Thyra::createMember(overlapped_vs);
-  overlapped_jac = disc->createOverlapJacobianOp();
 
   // This call allocates the non-overlapped MV
   current_soln = disc_->getSolutionMV();

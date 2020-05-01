@@ -1624,22 +1624,11 @@ STKDiscretization::computeOverlapNodesAndUnknowns()
 void
 STKDiscretization::computeGraphs()
 {
-  computeGraphsUpToFillComplete();
-  fillCompleteGraphs();
-}
-
-void
-STKDiscretization::computeGraphsUpToFillComplete()
-{
-  std::map<int, stk::mesh::Part*>::iterator pv = stkMeshStruct->partVec.begin();
-  const auto& topo = stk::mesh::get_cell_topology(metaData.get_topology(*pv->second));
-  int nodes_per_element = topo.getNodeCount();
-
   // Loads member data:  overlap_graph, numOverlapodes, overlap_node_map,
   // coordinates, graphs
 
-  m_overlap_jac_factory = Teuchos::rcp(new ThyraCrsMatrixFactory(
-      m_overlap_vs, m_overlap_vs));
+  m_jac_factory = Teuchos::rcp(new ThyraCrsMatrixFactory(
+      m_vs, m_vs, m_overlap_vs));
 
   stk::mesh::Selector select_owned_in_part =
       stk::mesh::Selector(metaData.universal_part()) &
@@ -1681,7 +1670,7 @@ STKDiscretization::computeGraphsUpToFillComplete()
           for (std::size_t m = 0; m < globalEqns.size(); ++m) {
             col   = getGlobalDOF(gid(colNode), globalEqns[m]);
             colAV = Teuchos::arrayView(&col, 1);
-            m_overlap_jac_factory->insertGlobalIndices(row, colAV);
+            m_jac_factory->insertGlobalIndices(row, colAV);
           }
         }
       }
@@ -1704,7 +1693,7 @@ STKDiscretization::computeGraphsUpToFillComplete()
         stk::mesh::Entity node = overlapnodes[inode];
         row                    = getGlobalDOF(gid(node), eq);
         colAV                  = Teuchos::arrayView(&row, 1);
-        m_overlap_jac_factory->insertGlobalIndices(row, colAV);
+        m_jac_factory->insertGlobalIndices(row, colAV);
       }
 
       // Number of side sets this eq is defined on
@@ -1744,9 +1733,9 @@ STKDiscretization::computeGraphsUpToFillComplete()
               // eqns)
               for (std::size_t m = 0; m < neq; m++) {
                 col = getGlobalDOF(gid(colNode), m);
-                m_overlap_jac_factory->insertGlobalIndices(
+                m_jac_factory->insertGlobalIndices(
                     row, Teuchos::arrayView(&col, 1));
-                m_overlap_jac_factory->insertGlobalIndices(
+                m_jac_factory->insertGlobalIndices(
                     col, Teuchos::arrayView(&row, 1));
               }
             }
@@ -1755,15 +1744,8 @@ STKDiscretization::computeGraphsUpToFillComplete()
       }
     }
   }
-}
 
-void
-STKDiscretization::fillCompleteGraphs()
-{
-  m_overlap_jac_factory->fillComplete();
-
-  m_jac_factory = Teuchos::rcp(
-      new ThyraCrsMatrixFactory(m_vs, m_vs, m_overlap_jac_factory));
+  m_jac_factory->fillComplete();
 }
 
 void
@@ -2867,7 +2849,7 @@ STKDiscretization::buildSideSetProjectors()
   // side discretizations
   //       since the underlying STK entities should have the same ID
   Teuchos::RCP<const Thyra_VectorSpace> ss_ov_vs, ss_vs;
-  Teuchos::RCP<ThyraCrsMatrixFactory>   graphP, ov_graphP;
+  Teuchos::RCP<ThyraCrsMatrixFactory>   ov_graphP;
   Teuchos::RCP<Thyra_LinearOp>          P, ov_P;
 
   Teuchos::Array<GO> cols(1);
@@ -2895,7 +2877,7 @@ STKDiscretization::buildSideSetProjectors()
     stk::mesh::get_selected_entities(
         selector, stkMeshStruct->bulkData->buckets(SIDE_RANK), sides);
 
-    // The projector: first the overlapped...
+    // The projector: build one with overlapped range vs first...
     ov_graphP = Teuchos::rcp(
         new ThyraCrsMatrixFactory(getOverlapVectorSpace(), ss_ov_vs));
 
@@ -2939,11 +2921,8 @@ STKDiscretization::buildSideSetProjectors()
     assign(ov_P, 1.0);
     ov_projectors[sideSetName] = ov_P;
 
-    // ...then the non-overlapped
-    graphP = Teuchos::rcp(
-        new ThyraCrsMatrixFactory(getVectorSpace(), ss_vs, ov_graphP));
-
-    P = graphP->createOp();
+    // ... then import to one with non-overlapped range vs
+    P = ov_graphP->createOp(true);
     assign(P, 1.0);
     projectors[sideSetName] = P;
   }
