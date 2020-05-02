@@ -22,6 +22,7 @@
 #include "LandIce_w_Resid.hpp"
 #include "LandIce_w_ZResid.hpp"
 #include "LandIce_SurfaceAirEnthalpy.hpp"
+#include "LandIce_FluxDivergenceResidual.hpp"
 
 //uncomment the following line if you want debug output to be printed to screen
 //#define OUTPUT_TO_SCREEN
@@ -64,6 +65,10 @@ public:
                        Albany::StateManager& stateMgr,
                        Albany::FieldManagerChoice fmchoice,
                        const Teuchos::RCP<Teuchos::ParameterList>& responseList);
+
+  template <typename EvalT>
+  void constructFluxDivEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& fm0,
+                                    Albany::FieldManagerChoice FieldManagerChoice);
 
   void constructDirichletEvaluators(const Albany::MeshSpecsStruct& meshSpecs);
   void constructNeumannEvaluators(const Teuchos::RCP<Albany::MeshSpecsStruct>& meshSpecs);
@@ -195,6 +200,10 @@ constructEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& fm0,
 
   // --- Enthalpy equation evaluators --- //
   constructEnthalpyEvaluators<EvalT> (fm0, fieldManagerChoice);
+
+  // --- FluxDiv-related evaluators (if needed) --- //
+  if(params->get("Flux Divergence Is Part Of Solution", false) == true)
+    constructFluxDivEvaluators<EvalT> (fm0, fieldManagerChoice);
 
   // Finally, construct responses, and return the tags
   return constructStokesFOBaseResponsesEvaluators<EvalT> (fm0, meshSpecs, stateMgr, fieldManagerChoice, responseList);
@@ -537,6 +546,52 @@ constructEnthalpyEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& fm0,
 
   ev = Teuchos::rcp(new LandIce::EnthalpyBasalResid<EvalT,PHAL::AlbanyTraits,typename EvalT::ScalarT>(*p,dl));
   fm0.template registerEvaluator<EvalT>(ev);
+}
+
+template <typename EvalT>
+void StokesFOThermoCoupled::constructFluxDivEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& fm0,
+                                            Albany::FieldManagerChoice fieldManagerChoice)
+{
+  Albany::EvaluatorUtils<EvalT, PHAL::AlbanyTraits> evalUtils(dl);
+  Teuchos::RCP<PHX::Evaluator<PHAL::AlbanyTraits> > ev;
+  Teuchos::RCP<Teuchos::ParameterList> p;
+
+  auto& flux_div_params = params->sublist("LandIce Flux Divergence");
+  auto& ssName = flux_div_params.get<std::string>("Side Set Name",basalSideName);
+
+  // ------------------- Interpolations and utilities ------------------ //
+
+  // Gather solution field
+  ev = evalUtils.constructGatherSolutionEvaluator_noTransient(false, dof_names[3], dof_offsets[3]);
+  fm0.template registerEvaluator<EvalT> (ev);
+
+  // Scatter residual
+  ev = evalUtils.constructScatterResidualEvaluatorWithExtrudedParams(false, resid_names[3], Teuchos::rcpFromRef(extruded_params_levels), dof_offsets[3], scatter_names[3]);
+  fm0.template registerEvaluator<EvalT> (ev);
+
+  // -------------------------------- LandIce evaluators ------------------------- //
+
+  // ---  Flux Divergence Residual ---
+  p = Teuchos::rcp(new Teuchos::ParameterList(resid_names[3]));
+
+  //Input
+  p->set<std::string>("Flux Divergence Variable Name", dof_names[3]);
+  p->set<std::string>("Coords Name", Albany::coord_vec_name);
+  p->set<std::string>("Thickness Name", ice_thickness_name);
+  p->set<std::string>("Vertically Averaged Velocity Name", vertically_averaged_velocity_name + "_" + basalSideName);
+  p->set<Teuchos::RCP<shards::CellTopology> >("Cell Type", cellType);
+  p->set<std::string>("Side Set Name", ssName);
+  p->set<bool>("Use Upwind Stabilization",  flux_div_params.get("Use Upwind Stabilization", true));
+  p->set<std::string>("Flux Divergence Residual Name", resid_names[3]);
+
+  ev = Teuchos::rcp(new LandIce::FluxDivergenceResidual<EvalT,PHAL::AlbanyTraits>(*p,dl));
+  fm0.template registerEvaluator<EvalT>(ev);
+
+  if (fieldManagerChoice == Albany::BUILD_RESID_FM) {
+    PHX::Tag<typename EvalT::ScalarT> res_tag(scatter_names[3], dl->dummy);
+    fm0.requireField<EvalT>(res_tag);
+  }
+
 }
 
 } // namespace LandIce

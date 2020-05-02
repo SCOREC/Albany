@@ -3020,7 +3020,9 @@ STKDiscretization::updateMesh()
     for (auto it : stkMeshStruct->sideSetMeshStructs) {
       Teuchos::RCP<STKDiscretization> side_disc =
           Teuchos::rcp(new STKDiscretization(discParams, it.second, comm));
+      //std::cout << "Inserting Side Disc " << it.first << " on Proc: " << comm->getRank() <<std::endl;
       side_disc->updateMesh();
+      //std::cout << "Done with Side Disc " << it.first << " on Proc: " << comm->getRank() <<std::endl;
       sideSetDiscretizations.insert(std::make_pair(it.first, side_disc));
       sideSetDiscretizationsSTK.insert(std::make_pair(it.first, side_disc));
 

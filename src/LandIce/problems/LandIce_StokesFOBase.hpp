@@ -1476,36 +1476,39 @@ void StokesFOBase::constructSMBEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>
     ev = Teuchos::rcp(new GatherVerticallyAveragedVelocity<EvalT,PHAL::AlbanyTraits>(*p,dl));
     fm0.template registerEvaluator<EvalT>(ev);
 
-    // Flux divergence
-    p = Teuchos::rcp(new Teuchos::ParameterList("Flux Divergence"));
 
-    //Input
-    p->set<std::string>("Averaged Velocity Side QP Variable Name", vertically_averaged_velocity_side_name);
-    p->set<std::string>("Averaged Velocity Side QP Divergence Name", vertically_averaged_velocity_side_name + " Divergence");
-    p->set<std::string>("Thickness Side QP Variable Name", ice_thickness_side_name);
-    p->set<std::string>("Thickness Gradient Name", ice_thickness_side_name + " Planar Gradient");
-    p->set<std::string>("Side Tangents Name", Albany::tangents_name + " " + basalSideNamePlanar);
+    if(!params->get("Flux Divergence Is Part Of Solution", false)) {
+      // Flux divergence
+      p = Teuchos::rcp(new Teuchos::ParameterList("Flux Divergence"));
 
-    p->set<std::string>("Field Name",  "flux_divergence_basalside");
-    p->set<std::string>("Side Set Name", basalSideName);
+      //Input
+      p->set<std::string>("Averaged Velocity Side QP Variable Name", vertically_averaged_velocity_side_name);
+      p->set<std::string>("Averaged Velocity Side QP Divergence Name", vertically_averaged_velocity_side_name + " Divergence");
+      p->set<std::string>("Thickness Side QP Variable Name", ice_thickness_side_name);
+      p->set<std::string>("Thickness Gradient Name", ice_thickness_side_name + " Planar Gradient");
+      p->set<std::string>("Side Tangents Name", Albany::tangents_name + " " + basalSideNamePlanar);
 
-    ev = createEvaluatorWithOneScalarType<LandIce::FluxDiv,EvalT>(p,dl_side,field_scalar_type[ice_thickness_name]);
-    fm0.template registerEvaluator<EvalT>(ev);
+      p->set<std::string>("Field Name",  "flux_divergence_basalside");
+      p->set<std::string>("Side Set Name", basalSideName);
 
-    // --- 2D divergence of Averaged Velocity ---- //
-    p = Teuchos::rcp(new Teuchos::ParameterList("DOF Div Interpolation Side Averaged Velocity"));
+      ev = createEvaluatorWithOneScalarType<LandIce::FluxDiv,EvalT>(p,dl_side,field_scalar_type[ice_thickness_name]);
+      fm0.template registerEvaluator<EvalT>(ev);
 
-    // Input
-    p->set<std::string>("Variable Name", vertically_averaged_velocity_side_name);
-    p->set<std::string>("Gradient BF Name", Albany::grad_bf_name + " "+basalSideNamePlanar);
-    p->set<std::string>("Tangents Name", "Tangents "+basalSideNamePlanar);
-    p->set<std::string>("Side Set Name",basalSideName);
+      // --- 2D divergence of Averaged Velocity ---- //
+      p = Teuchos::rcp(new Teuchos::ParameterList("DOF Div Interpolation Side Averaged Velocity"));
 
-    // Output (assumes same Name as input)
-    p->set<std::string>("Divergence Variable Name", vertically_averaged_velocity_side_name  + " Divergence");
+      // Input
+      p->set<std::string>("Variable Name", vertically_averaged_velocity_side_name);
+      p->set<std::string>("Gradient BF Name", Albany::grad_bf_name + " "+basalSideNamePlanar);
+      p->set<std::string>("Tangents Name", "Tangents "+basalSideNamePlanar);
+      p->set<std::string>("Side Set Name",basalSideName);
 
-    ev = Teuchos::rcp(new LandIce::DOFDivInterpolationSide<EvalT,PHAL::AlbanyTraits>(*p,dl_side));
-    fm0.template registerEvaluator<EvalT>(ev);
+      // Output (assumes same Name as input)
+      p->set<std::string>("Divergence Variable Name", vertically_averaged_velocity_side_name  + " Divergence");
+
+      ev = Teuchos::rcp(new LandIce::DOFDivInterpolationSide<EvalT,PHAL::AlbanyTraits>(*p,dl_side));
+      fm0.template registerEvaluator<EvalT>(ev);
+    }
   }
 }
 
