@@ -1439,7 +1439,7 @@ Application::computeGlobalJacobianImpl(
   }
 
   // Zero out Jacobian
-  resumeFill(jac);
+  beginFEAssembly(jac);
   assign(jac, 0.0);
 
   // Set data in Workset struct, and perform fill via field manager
@@ -1491,6 +1491,9 @@ Application::computeGlobalJacobianImpl(
     }
   }
 
+  // This will also assemble global jacobian (i.e., do import/export)
+  endFEAssembly(jac);
+
   // Allocate and populate scaleVec_
   if (scale != 1.0) {
     if (scaleVec_ == Teuchos::null ||
@@ -1508,9 +1511,6 @@ Application::computeGlobalJacobianImpl(
       cas_manager->combine(overlapped_f, f, CombineMode::ADD);
     }
   }
-
-  // This will also assemble global jacobian (i.e., do import/export)
-  fillComplete(jac);
 
   // scale Jacobian
   if (scaleBCdofs == false && scale != 1.0) {
@@ -1543,6 +1543,9 @@ Application::computeGlobalJacobianImpl(
 
   // Apply Dirichlet conditions using dfm (Dirchelt Field Manager)
   if (Teuchos::nonnull(dfm)) {
+    // Re-open the jacobian
+    resumeFill(jac);
+
     PHAL::Workset workset;
 
     workset.f       = f;
@@ -1578,8 +1581,10 @@ Application::computeGlobalJacobianImpl(
 
     // FillType template argument used to specialize Sacado
     dfm->evaluateFields<EvalT>(workset);
+
+    // Close the jacobian
+    fillComplete(jac);
   }
-  fillComplete(jac);
 
   // Apply scaling to residual and Jacobian
   if (scaleBCdofs == true) {
