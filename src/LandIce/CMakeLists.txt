@@ -21,7 +21,7 @@ set(SOURCES
   evaluators/LandIce_FluxDiv.cpp
   evaluators/LandIce_FluxDivergenceResidual.cpp
   evaluators/LandIce_Gather2DField.cpp
-  evaluators/LandIce_GatherVerticallyAveragedVelocity.cpp
+  evaluators/LandIce_GatherVerticallyContractedSolution.cpp
   evaluators/LandIce_GeoFluxHeat.cpp
   evaluators/LandIce_HydraulicPotential.cpp
   evaluators/LandIce_HydrologyBasalGravitationalWaterPotential.cpp
@@ -119,8 +119,8 @@ set(HEADERS
   evaluators/LandIce_FluxDivergenceResidual_Def.hpp
   evaluators/LandIce_Gather2DField.hpp
   evaluators/LandIce_Gather2DField_Def.hpp
-  evaluators/LandIce_GatherVerticallyAveragedVelocity.hpp
-  evaluators/LandIce_GatherVerticallyAveragedVelocity_Def.hpp
+  evaluators/LandIce_GatherVerticallyContractedSolution.hpp
+  evaluators/LandIce_GatherVerticallyContractedSolution_Def.hpp
   evaluators/LandIce_GeoFluxHeat.hpp
   evaluators/LandIce_GeoFluxHeat_Def.hpp
   evaluators/LandIce_HydraulicPotential.hpp
