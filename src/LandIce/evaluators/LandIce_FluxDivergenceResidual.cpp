@@ -10,3 +10,4 @@
 #include "LandIce_FluxDivergenceResidual_Def.hpp"
 
 PHAL_INSTANTIATE_TEMPLATE_CLASS(LandIce::FluxDivergenceResidual)
+PHAL_INSTANTIATE_TEMPLATE_CLASS(LandIce::LayeredFluxDivergenceResidual)

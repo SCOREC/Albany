@@ -256,10 +256,7 @@ void StokesFOThermoCoupled::setupEvaluatorRequests ()
   if (basalSideName!=INVALID_STR) {
     ss_build_interp_ev[basalSideName][dof_names[2]            ][InterpolationRequest::QP_VAL      ] = true;
     ss_build_interp_ev[basalSideName][dof_names[2]            ][InterpolationRequest::CELL_TO_SIDE] = true;
-    if(params->get("Flux Divergence Is Part Of Solution", false)) {
-      ss_build_interp_ev[basalSideName][dof_names[3]          ][InterpolationRequest::QP_VAL      ] = true;
-      ss_build_interp_ev[basalSideName][dof_names[3]          ][InterpolationRequest::CELL_TO_SIDE] = true;
-    }
+
     ss_build_interp_ev[basalSideName]["W"                     ][InterpolationRequest::CELL_TO_SIDE] = true;
     ss_build_interp_ev[basalSideName]["W"                     ][InterpolationRequest::QP_VAL      ] = true;
     if (!compute_w) {
