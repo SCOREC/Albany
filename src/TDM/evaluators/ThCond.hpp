@@ -72,10 +72,10 @@ namespace TDM {
 
     // Thermal conductivity in the pre-melted material
     ScalarT Kp_;
-	//Thermal conductivity of the post-melted material	
-	ScalarT Kd_;
+    //Thermal conductivity of the post-melted material	
+    ScalarT Kd_;
 	
-	//Thermal conductivity of the solid material, accounting for porosity
+    //Thermal conductivity of the solid material, accounting for porosity
     ScalarT Ks_;
 	
     // Thermal conductivity in the liquid phase
@@ -84,6 +84,11 @@ namespace TDM {
     // Thermal conductivity  in the vapor phase
     ScalarT Kv_;
 	
+    //  Thermal conductivity in the powder phase
+    ScalarT Kpowder_;
+
+    // Powder initial porosity (detecting if initially powder or solid)
+    ScalarT initial_porosity_;
 
 
     //	std::string sim_type;
