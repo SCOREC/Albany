@@ -445,6 +445,27 @@ Albany::BCUtils<Albany::DirichletTraits>::buildEvaluatorsList(
     }
   }
 
+  for (std::size_t i = 0; i < nodeSetIDs.size(); i++) {
+    for (std::size_t j = 0; j < bcNames.size(); j++) {
+      string ss = traits_type::constructSDBCNameField(nodeSetIDs[i], bcNames[j]);
+      if (BCparams.isParameter(ss)) {
+        RCP<ParameterList> p = rcp(new ParameterList);
+        p->set<int>("Type", traits_type::typeSF);
+        p->set<RCP<DataLayout>>("Data Layout", dummy);
+        p->set<string>("Dirichlet Name", ss);
+        p->set<RealType>("Dirichlet Value", 0.0);
+        p->set<string>("Field Name", BCparams.get<string>(ss));
+        p->set<string>("Node Set ID", nodeSetIDs[i]);
+        p->set<int>("Equation Offset", j);
+        offsets_[i].push_back(j);
+        p->set<RCP<ParamLib>>("Parameter Library", paramLib);
+        evaluators_to_build[evaluatorsToBuildName(ss)] = p;
+        bcs->push_back(ss);
+        use_sdbcs_ = true;
+      }
+    }
+  }
+
   ///
   /// Time dependent BC specific
   ///
@@ -709,6 +730,36 @@ Albany::BCUtils<Albany::DirichletTraits>::buildEvaluatorsList(
       }
     }
   }
+#ifdef ALBANY_STK_EXPR_EVAL
+  ///
+  /// Expression Evaluated SDBC (S = "Symmetric", f.k.a. "Strong")
+  ///
+  for (std::size_t i = 0; i < nodeSetIDs.size(); i++) {
+    for (std::size_t j = 0; j < bcNames.size(); j++) {
+      string ss =
+          traits_type::constructExprEvalSDBCName(nodeSetIDs[i], bcNames[j]);
+      if (BCparams.isParameter(ss)) {
+        RCP<ParameterList> p = rcp(new ParameterList);
+        use_sdbcs_           = true;
+        p->set<int>("Type", traits_type::typeEe);
+        p->set<RCP<DataLayout>>("Data Layout", dummy);
+        p->set<string>("Dirichlet Name", ss);
+        p->set<std::string>(
+            "Dirichlet Expression", BCparams.get<std::string>(ss));
+        p->set<RealType>("Dirichlet Value", 0.0);
+        p->set<string>("Node Set ID", nodeSetIDs[i]);
+        p->set<int>("Equation Offset", j);
+        offsets_[i].push_back(j);
+        p->set<RCP<ParamLib>>("Parameter Library", paramLib);
+
+        evaluators_to_build[evaluatorsToBuildName(ss)] = p;
+
+        bcs->push_back(ss);
+      }
+    }
+  }
+#endif
+  ///
   ///
   /// Scaled SDBC (S = "Symmetric", f.k.a. "Strong")
   ///
@@ -948,14 +999,14 @@ Albany::BCUtils<Albany::DirichletTraits>::buildEvaluatorsList(
     delete value;
   }
 
-  if ((use_dbcs_ == true) && (use_sdbcs_ == true)) {
+/*  if ((use_dbcs_ == true) && (use_sdbcs_ == true)) {
     TEUCHOS_TEST_FOR_EXCEPTION(
         true,
         std::logic_error,
         "You are attempting to prescribe a mix of SDBCs and DBCs, which is not "
         "allowed!\n");
   }
-
+*/
   string allBC = "Evaluator for all Dirichlet BCs";
   {
     RCP<ParameterList> p = rcp(new ParameterList);
@@ -1362,6 +1413,8 @@ Albany::DirichletTraits::getValidBCParameters(
           nodeSetIDs[i], bcNames[j]);
       std::string pp = Albany::DirichletTraits::constructPressureDepBCName(
           nodeSetIDs[i], bcNames[j]);
+      std::string ee = Albany::DirichletTraits::constructExprEvalSDBCName(
+          nodeSetIDs[i], bcNames[j]);
       std::string st =
           Albany::DirichletTraits::constructSDBCName(nodeSetIDs[i], bcNames[j]);
       std::string sst = Albany::DirichletTraits::constructScaledSDBCName(
@@ -1370,6 +1423,10 @@ Albany::DirichletTraits::getValidBCParameters(
           ss, 0.0, "Value of BC corresponding to nodeSetID and dofName");
       validPL->set<double>(
           st, 0.0, "Value of SDBC corresponding to nodeSetID and dofName");
+      validPL->set<std::string>(
+          ee,
+          "0.0",
+          "Expression of SDBC corresponding to nodeSetID and dofName");
       Teuchos::Array<double> array(1);
       array[0] = 0.0;
       validPL->set<Teuchos::Array<double>>(
@@ -1386,12 +1443,16 @@ Albany::DirichletTraits::getValidBCParameters(
           nodeSetIDs[i], bcNames[j]);
       st = Albany::DirichletTraits::constructSDBCNameField(
           nodeSetIDs[i], bcNames[j]);
+      ee = Albany::DirichletTraits::constructExprEvalSDBCNameField(
+          nodeSetIDs[i], bcNames[j]);
       sst = Albany::DirichletTraits::constructScaledSDBCNameField(
           nodeSetIDs[i], bcNames[j]);
       validPL->set<std::string>(
           ss, "dirichlet field", "Field used to prescribe Dirichlet BCs");
       validPL->set<std::string>(
           st, "dirichlet field", "Field used to prescribe SDBCs");
+      validPL->set<std::string>(
+          ee, "dirichlet field", "Field used to prescribe Expression SDBCs");
       std::string onsbc = Albany::DirichletTraits::constructBCNameOffNodeSet(
           nodeSetIDs[i], bcNames[j]);
       validPL->set<double>(
@@ -1499,6 +1560,17 @@ Albany::DirichletTraits::constructSDBCName(
 }
 
 std::string
+Albany::DirichletTraits::constructExprEvalSDBCName(
+    std::string const& ns,
+    std::string const& dof)
+{
+  std::stringstream ss;
+  ss << "ExpressionEvaluated SDBC on NS " << ns << " for DOF " << dof;
+
+  return ss.str();
+}
+
+std::string
 Albany::DirichletTraits::constructScaledSDBCName(
     const std::string& ns,
     const std::string& dof)
@@ -1530,6 +1602,19 @@ Albany::DirichletTraits::constructSDBCNameField(
 
   return ss.str();
 }
+
+std::string
+Albany::DirichletTraits::constructExprEvalSDBCNameField(
+    std::string const& ns,
+    std::string const& dof)
+{
+  std::stringstream ss;
+  ss << "ExpressionEvaluated SDBC on NS " << ns << " for DOF " << dof
+     << " prescribe Field";
+
+  return ss.str();
+}
+
 
 std::string
 Albany::DirichletTraits::constructScaledSDBCNameField(

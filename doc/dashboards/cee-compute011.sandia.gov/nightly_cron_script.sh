@@ -9,7 +9,7 @@ BUILD_OPT="$1"
 
 if [ -z "$BUILD_OPT" ]; then
 
-   echo "Please supply an argument: base, debug, clang, clangdbg or intel"
+   echo "Please supply an argument: base-trilinos, base-albany, debug-trilinos, debug-albany, clang-trilinos, clang-albany, clangdbg-trilinos, clangdbg-albany, intel-trilinos or intel-albany"
 
    exit 1;
 
@@ -22,7 +22,7 @@ SCRATCH_DIR=/scratch/albany
 
 export LM_LICENSE_FILE=7500@sitelicense.sandia.gov
 
-if [ "$BUILD_OPT" = "intel" ]; then
+if [ "$BUILD_OPT" = "intel-trilinos" ] || [ "$BUILD_OPT" = "intel-albany" ]; then
 
   # Load a gcc as the intel compiler needs it
   if [ "${MODULESHOME:-}" = "" ]; then
@@ -39,7 +39,7 @@ if [ "$BUILD_OPT" = "intel" ]; then
    # Argh! The 2018.1.163 compiler install is apparently broken
 #   export I_MPI_ROOT=/projects/sierra/linux_rh6/SDK/mpi/intel/5.1.2.150
 
-elif [ "$BUILD_OPT" = "debug" ]; then
+elif [ "$BUILD_OPT" = "debug-trilinos" ] ||  [ "$BUILD_OPT" = "debug-albany" ]; then
 
   # Load latest gcc
   if [ "${MODULESHOME:-}" = "" ]; then
@@ -54,7 +54,7 @@ elif [ "$BUILD_OPT" = "debug" ]; then
   module load sierra-mkl/19.0-2019.0.117
   module load sparc-cmake
 
-elif [ "$BUILD_OPT" = "clang" ] || [ "$BUILD_OPT" = "clangdbg" ]; then
+elif [ "$BUILD_OPT" = "clang-trilinos" ] || [ "$BUILD_OPT" = "clang-albany" ] || [ "$BUILD_OPT" = "clangdbg-trilinos" ] || [ "$BUILD_OPT" = "clangdbg-albany" ]; then
 
   # Need a gcc for stuff associated with clang
   if [ "${MODULESHOME:-}" = "" ]; then

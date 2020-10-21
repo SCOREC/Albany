@@ -163,6 +163,7 @@ SET(SOURCES ${SOURCES}
   problems/Albany_BCUtils.cpp
   problems/Albany_EvaluatorUtils.cpp
   problems/Albany_HeatProblem.cpp
+  problems/Albany_ThermalProblem.cpp
   problems/Albany_Layouts.cpp
   problems/Albany_PopulateMesh.cpp
   problems/Albany_ProblemFactory.cpp
@@ -191,6 +192,7 @@ SET(HEADERS ${HEADERS}
   problems/Albany_EvaluatorUtils_Def.hpp
   problems/Albany_GeneralPurposeFieldsNames.hpp
   problems/Albany_HeatProblem.hpp
+  problems/Albany_ThermalProblem.hpp
   problems/Albany_Layouts.hpp
   problems/Albany_PopulateMesh.hpp
   problems/Albany_ProblemFactory.hpp
@@ -295,6 +297,7 @@ SET(SOURCES ${SOURCES}
   evaluators/bc/PHAL_SDirichlet.cpp
   evaluators/bc/PHAL_DirichletCoordinateFunction.cpp
   evaluators/bc/PHAL_DirichletField.cpp
+  evaluators/bc/PHAL_SDirichletField.cpp
   evaluators/bc/PHAL_DirichletOffNodeSet.cpp
   evaluators/bc/PHAL_IdentityCoordinateFunctionTraits.cpp
   evaluators/bc/PHAL_Neumann.cpp
@@ -319,6 +322,7 @@ SET(SOURCES ${SOURCES}
   evaluators/interpolation/PHAL_QuadPointsToCellInterpolation.cpp
   evaluators/interpolation/PHAL_SideQuadPointsToSideInterpolation.cpp
   evaluators/pde/PHAL_HeatEqResid.cpp
+  evaluators/pde/PHAL_ThermalResid.cpp
   evaluators/pde/PHAL_NSMaterialProperty.cpp
   evaluators/pde/PHAL_SideLaplacianResidual.cpp
   evaluators/pde/PHAL_ThermalConductivity.cpp
@@ -363,6 +367,10 @@ SET(SOURCES ${SOURCES}
 IF (ALBANY_STK)
  SET(SOURCES ${SOURCES}
    evaluators/state/PHAL_SaveSideSetStateField.cpp)
+  IF(ALBANY_STK_EXPR_EVAL)
+    SET(SOURCES ${SOURCES} 
+      evaluators/bc/PHAL_ExprEvalSDBC.cpp)
+  ENDIF()
 ENDIF()
 
 IF (ALBANY_EPETRA)
@@ -413,6 +421,8 @@ SET(HEADERS ${HEADERS}
   evaluators/bc/PHAL_DirichletCoordinateFunction_Def.hpp
   evaluators/bc/PHAL_DirichletField.hpp
   evaluators/bc/PHAL_DirichletField_Def.hpp
+  evaluators/bc/PHAL_SDirichletField.hpp
+  evaluators/bc/PHAL_SDirichletField_Def.hpp
   evaluators/bc/PHAL_DirichletOffNodeSet.hpp
   evaluators/bc/PHAL_DirichletOffNodeSet_Def.hpp
   evaluators/bc/PHAL_Dirichlet_Def.hpp
@@ -465,6 +475,8 @@ SET(HEADERS ${HEADERS}
   evaluators/interpolation/PHAL_SideQuadPointsToSideInterpolation_Def.hpp
   evaluators/pde/PHAL_HeatEqResid.hpp
   evaluators/pde/PHAL_HeatEqResid_Def.hpp
+  evaluators/pde/PHAL_ThermalResid.hpp
+  evaluators/pde/PHAL_ThermalResid_Def.hpp
   evaluators/pde/PHAL_NSMaterialProperty.hpp
   evaluators/pde/PHAL_NSMaterialProperty_Def.hpp
   evaluators/pde/PHAL_SideLaplacianResidual.hpp
@@ -541,11 +553,17 @@ SET(HEADERS ${HEADERS}
   evaluators/utility/QCAD_MeshRegion.hpp
   evaluators/utility/QCAD_MeshRegion_Def.hpp
   )
+  
 
 IF (ALBANY_STK)
   SET(HEADERS ${HEADERS}
     evaluators/state/PHAL_SaveSideSetStateField.hpp
     evaluators/state/PHAL_SaveSideSetStateField_Def.hpp)
+  IF(ALBANY_STK_EXPR_EVAL)
+    SET(HEADERS ${HEADERS} 
+      evaluators/bc/PHAL_ExprEvalSDBC.hpp
+      evaluators/bc/PHAL_ExprEvalSDBC_Def.hpp)
+  ENDIF()
 ENDIF()
 
 
@@ -684,14 +702,12 @@ include_directories (${ALBANY_PUMI_INCLUDE_DIRS}
                      ./LCM/utils/topology
                      ./LandIce/problems
                      ./LandIce/evaluators
+                     ./TDM/problems
+                     ./TDM/evaluators
                      ./Tsunami/problems
                      ./Tsunami/evaluators
                      ./Aeras/problems
                      ./Aeras/evaluators
-                     ./AMP
-                     ./AMP/problems
-                     ./AMP/evaluators
-                     ./AMP/responses
                      ./ATO
                      ./ATO/problems
                      ./ATO/evaluators
@@ -767,10 +783,6 @@ ELSE()
   SET(ALBANY_PUMI_INCLUDE_DIRS )
 ENDIF()
 
-IF (ALBANY_AMP)
-  add_subdirectory(AMP)
-  SET(ALBANY_LIBRARIES ${ALBANY_LIBRARIES} AMP)
-ENDIF()
 
 # Catalyst CoProcessing
 if(ALBANY_CATALYST)
@@ -856,6 +868,11 @@ ENDIF()
 IF (ALBANY_AERAS)
   add_subdirectory(Aeras)
   SET(ALBANY_LIBRARIES ${ALBANY_LIBRARIES} Aeras)
+ENDIF()
+
+IF (ALBANY_TDM)
+  add_subdirectory(TDM)
+  SET(ALBANY_LIBRARIES ${ALBANY_LIBRARIES} TDM)
 ENDIF()
 
 IF (ALBANY_TSUNAMI)

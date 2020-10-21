@@ -52,11 +52,11 @@ cmake \
  \
  -D Teuchos_ENABLE_STACKTRACE:BOOL=OFF \
  -D Teuchos_ENABLE_DEFAULT_STACKTRACE:BOOL=OFF \
- -D Kokkos_ENABLE_Cuda_UVM:BOOL=lcm_enable_uvm \
+ -D Kokkos_ENABLE_CUDA_UVM:BOOL=lcm_enable_uvm \
  -D Kokkos_ENABLE_EXAMPLES:BOOL=lcm_enable_kokkos_examples \
- -D Kokkos_ENABLE_OpenMP:BOOL=lcm_enable_openmp \
- -D Kokkos_ENABLE_Pthread:BOOL=lcm_enable_pthreads \
- -D Kokkos_ENABLE_Serial:BOOL=ON \
+ -D Kokkos_ENABLE_OPENMP:BOOL=lcm_enable_openmp \
+ -D Kokkos_ENABLE_PTHREAD:BOOL=lcm_enable_pthreads \
+ -D Kokkos_ENABLE_SERIAL:BOOL=ON \
  -D Kokkos_ENABLE_TESTS:BOOL=OFF \
  -D TPL_ENABLE_CUDA:STRING=lcm_enable_cuda \
  -D TPL_ENABLE_CUSPARSE:BOOL=lcm_enable_cusparse \
@@ -114,6 +114,7 @@ cmake \
  -D Trilinos_ENABLE_STKClassic:BOOL=OFF \
  -D Trilinos_ENABLE_STKIO:BOOL=ON \
  -D Trilinos_ENABLE_STKMesh:BOOL=ON \
+ -D Trilinos_ENABLE_STKExprEval:BOOL=ON \
  -D Trilinos_ENABLE_Sacado:BOOL=ON \
  -D Trilinos_ENABLE_Shards:BOOL=ON \
  -D Trilinos_ENABLE_Stokhos:BOOL=OFF \

@@ -4,8 +4,6 @@ macro(do_albany CONFIGURE_OPTIONS BTYPE)
 
   message ("ctest state: BUILD_${BTYPE}")
 
-  set_property (GLOBAL PROPERTY SubProject ${BTYPE})
-  set_property (GLOBAL PROPERTY Label ${BTYPE})
 
 # Clean up build area
   IF (CLEAN_BUILD)
@@ -138,7 +136,7 @@ macro(do_albany CONFIGURE_OPTIONS BTYPE)
     endif (S_HAD_ERROR)
   endif (CTEST_DO_SUBMIT)
 
-  ENDIF((BUILD_SUCCESS) OR (BTYPE MATCHED "Albany64BitClangDbg"))
+  ENDIF((BUILD_SUCCESS) OR (BTYPE MATCHES "Albany64BitClangDbg"))
   ENDIF(CONFIG_SUCCESS)
 
 endmacro(do_albany CONFIGURE_OPTIONS BTYPE)

@@ -36,9 +36,8 @@ private:
   typedef typename EvalT::MeshScalarT MeshScalarT;
   typedef typename EvalT::ParamScalarT ParamScalarT;
 
-  enum STABILIZATION_TYPE {SUPG, SU, UPWIND, NONE} ;
+  enum STABILIZATION_TYPE {SU, UPWIND, NONE} ;
   STABILIZATION_TYPE stabilization;
-  bool haveSUPG;
   double delta;
 
   // Input:
@@ -52,7 +51,7 @@ private:
 
   PHX::MDField<const VelocityST,Cell,QuadPoint,VecDim>          Velocity; //[m yr^{-1}]
   PHX::MDField<const VelocityST,Cell,QuadPoint,VecDim, Dim>     velGrad; //[m yr^{-1}]
-  PHX::MDField<const ScalarT,Cell,QuadPoint>                    verticalVel; //[m yr^{-1}]
+  PHX::MDField<const VelocityST,Cell,QuadPoint>                 verticalVel; //[m yr^{-1}]
   PHX::MDField<const MeshScalarT,Cell,Node,Dim>                 coordVec; // [km]
   PHX::MDField<const ScalarT,Cell,QuadPoint>                    diss;  //[W m^{-3}] = [Pa s^{-1}]
   PHX::MDField<const ScalarT,Cell,Node>                         basalFricHeat;  // [MW] = [k^{-1} Pa s^{-1} km^3], k=1000

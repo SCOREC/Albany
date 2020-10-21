@@ -6,26 +6,46 @@ SET(CTEST_BUILD_OPTION "$ENV{BUILD_OPTION}")
 
 if (1)
   # What to build and test
-  IF(CTEST_BUILD_OPTION MATCHES "base")
-    # Only download repos in the base nightly test run (start it an hour earlier)
-    set (DOWNLOAD TRUE)
-  ELSE()
-    set (DOWNLOAD FALSE)
-  ENDIF()
-
+  IF(CTEST_BUILD_OPTION MATCHES "base-trilinos") 
+    set (DOWNLOAD_TRILINOS TRUE)
+    set (DOWNLOAD_ALBANY FALSE)
+    set (BUILD_TRILINOS TRUE)
+    set (BUILD_ALB64 FALSE) 
+  ENDIF() 
+  IF(CTEST_BUILD_OPTION MATCHES "base-albany") 
+    set (DOWNLOAD_TRILINOS FALSE)
+    set (DOWNLOAD_ALBANY TRUE)
+    set (BUILD_TRILINOS FALSE)
+    set (BUILD_ALB64 TRUE) 
+  ENDIF() 
   set (CLEAN_BUILD TRUE)
   set (BUILD_SCOREC TRUE)
-  set (BUILD_TRILINOS TRUE)
-  set (BUILD_PERIDIGM TRUE)
 # Drop the gcc 32bit build
   set (BUILD_ALB32 FALSE)
-  set (BUILD_ALB64 TRUE)
 # Drop the functor dev build - is this still of interest?
   set (BUILD_ALBFUNCTOR FALSE)
   set (CTEST_BUILD_CONFIGURATION  Release) # What type of build do you want ?
-  IF(CTEST_BUILD_OPTION MATCHES "debug")
+  IF(CTEST_BUILD_OPTION MATCHES "debug-trilinos")
     set (BUILD_TRILINOS FALSE)
     set (BUILD_TRILINOSDBG TRUE)
+    set (BUILD_PERIDIGM FALSE)
+    set (BUILD_ALB32 FALSE)
+    set (BUILD_ALB64 FALSE)
+    set (BUILD_ALB64DBG FALSE)
+    set (BUILD_TRILINOSCLANG FALSE)
+    set (BUILD_ALB64CLANG FALSE)
+    set (BUILD_TRILINOSCLANGDBG FALSE)
+    set (BUILD_ALB64CLANGDBG FALSE)
+    set (BUILD_ALBFUNCTOR FALSE)
+    set (BUILD_INTEL_TRILINOS FALSE)
+    set (BUILD_INTEL_ALBANY FALSE)
+    set (CTEST_BUILD_CONFIGURATION  Debug) # What type of build do you want ?
+  ELSE()
+    set (BUILD_TRILINOSDBG FALSE)
+  ENDIF()
+  IF(CTEST_BUILD_OPTION MATCHES "debug-albany")
+    set (BUILD_TRILINOS FALSE)
+    set (BUILD_TRILINOSDBG FALSE)
     set (BUILD_PERIDIGM FALSE)
     set (BUILD_ALB32 FALSE)
     set (BUILD_ALB64 FALSE)
@@ -39,16 +59,15 @@ if (1)
     set (BUILD_INTEL_ALBANY FALSE)
     set (CTEST_BUILD_CONFIGURATION  Debug) # What type of build do you want ?
   ELSE()
-    set (BUILD_TRILINOSDBG FALSE)
     set (BUILD_ALB64DBG FALSE)
-  ENDIF()
-  IF(CTEST_BUILD_OPTION MATCHES "clang")
+  ENDIF() 
+  IF(CTEST_BUILD_OPTION MATCHES "clang-trilinos")
     set (BUILD_TRILINOS FALSE)
     set (BUILD_PERIDIGM FALSE)
     set (BUILD_ALB32 FALSE)
     set (BUILD_ALB64 FALSE)
     set (BUILD_TRILINOSCLANG TRUE)
-    set (BUILD_ALB64CLANG TRUE)
+    set (BUILD_ALB64CLANG FALSE)
     set (BUILD_TRILINOSCLANGDBG FALSE)
     set (BUILD_ALB64CLANGDBG FALSE)
     set (BUILD_ALBFUNCTOR FALSE)
@@ -58,9 +77,25 @@ if (1)
 #    set (CTEST_BUILD_CONFIGURATION  Debug) # What type of build do you want ?
   ELSE()
     set (BUILD_TRILINOSCLANG FALSE)
+  ENDIF()
+  IF(CTEST_BUILD_OPTION MATCHES "clang-albany")
+    set (BUILD_TRILINOS FALSE)
+    set (BUILD_PERIDIGM FALSE)
+    set (BUILD_ALB32 FALSE)
+    set (BUILD_ALB64 FALSE)
+    set (BUILD_TRILINOSCLANG FALSE)
+    set (BUILD_ALB64CLANG TRUE)
+    set (BUILD_TRILINOSCLANGDBG FALSE)
+    set (BUILD_ALB64CLANGDBG FALSE)
+    set (BUILD_ALBFUNCTOR FALSE)
+    set (BUILD_INTEL_TRILINOS FALSE)
+    set (BUILD_INTEL_ALBANY FALSE)
+    set (CTEST_BUILD_CONFIGURATION  Release) # What type of build do you want ?
+#    set (CTEST_BUILD_CONFIGURATION  Debug) # What type of build do you want ?
+  ELSE()
     set (BUILD_ALB64CLANG FALSE)
   ENDIF()
-  IF(CTEST_BUILD_OPTION MATCHES "clangdbg")
+  IF(CTEST_BUILD_OPTION MATCHES "clangdbg-trilinos")
     set (BUILD_TRILINOS FALSE)
     set (BUILD_PERIDIGM FALSE)
     set (BUILD_ALB32 FALSE)
@@ -68,7 +103,7 @@ if (1)
     set (BUILD_TRILINOSCLANG FALSE)
     set (BUILD_ALB64CLANG FALSE)
     set (BUILD_TRILINOSCLANGDBG TRUE)
-    set (BUILD_ALB64CLANGDBG TRUE)
+    set (BUILD_ALB64CLANGDBG FALSE)
     set (BUILD_ALBFUNCTOR FALSE)
     set (BUILD_INTEL_TRILINOS FALSE)
     set (BUILD_INTEL_ALBANY FALSE)
@@ -76,9 +111,25 @@ if (1)
 #    set (CTEST_BUILD_CONFIGURATION  Debug) # What type of build do you want ?
   ELSE()
     set (BUILD_TRILINOSCLANGDBG FALSE)
+  ENDIF()
+  IF(CTEST_BUILD_OPTION MATCHES "clangdbg-albany")
+    set (BUILD_TRILINOS FALSE)
+    set (BUILD_PERIDIGM FALSE)
+    set (BUILD_ALB32 FALSE)
+    set (BUILD_ALB64 FALSE)
+    set (BUILD_TRILINOSCLANG FALSE)
+    set (BUILD_ALB64CLANG FALSE)
+    set (BUILD_TRILINOSCLANGDBG FALSE)
+    set (BUILD_ALB64CLANGDBG TRUE)
+    set (BUILD_ALBFUNCTOR FALSE)
+    set (BUILD_INTEL_TRILINOS FALSE)
+    set (BUILD_INTEL_ALBANY FALSE)
+    set (CTEST_BUILD_CONFIGURATION  Debug) # What type of build do you want ?
+#    set (CTEST_BUILD_CONFIGURATION  Debug) # What type of build do you want ?
+  ELSE()
     set (BUILD_ALB64CLANGDBG FALSE)
   ENDIF()
-  IF(CTEST_BUILD_OPTION MATCHES "intel")
+  IF(CTEST_BUILD_OPTION MATCHES "intel-trilinos")
     set (BUILD_TRILINOS FALSE)
     set (BUILD_PERIDIGM FALSE)
     set (BUILD_ALB32 FALSE)
@@ -89,11 +140,27 @@ if (1)
     set (BUILD_ALB64CLANGDBG FALSE)
     set (BUILD_ALBFUNCTOR FALSE)
     set (BUILD_INTEL_TRILINOS TRUE)
-    set (BUILD_INTEL_ALBANY TRUE)
+    set (BUILD_INTEL_ALBANY FALSE)
     set (CTEST_BUILD_CONFIGURATION  Release) # What type of build do you want ?
 #    set (CTEST_BUILD_CONFIGURATION  Debug) # What type of build do you want ?
   ELSE()
     set (BUILD_INTEL_TRILINOS FALSE)
+  ENDIF()
+  IF(CTEST_BUILD_OPTION MATCHES "intel-albany")
+    set (BUILD_TRILINOS FALSE)
+    set (BUILD_PERIDIGM FALSE)
+    set (BUILD_ALB32 FALSE)
+    set (BUILD_ALB64 FALSE)
+    set (BUILD_TRILINOSCLANG FALSE)
+    set (BUILD_ALB64CLANG FALSE)
+    set (BUILD_TRILINOSCLANGDBG FALSE)
+    set (BUILD_ALB64CLANGDBG FALSE)
+    set (BUILD_ALBFUNCTOR FALSE)
+    set (BUILD_INTEL_TRILINOS FALSE)
+    set (BUILD_INTEL_ALBANY TRUE)
+    set (CTEST_BUILD_CONFIGURATION  Release) # What type of build do you want ?
+#    set (CTEST_BUILD_CONFIGURATION  Debug) # What type of build do you want ?
+  ELSE()
     set (BUILD_INTEL_ALBANY FALSE)
   ENDIF()
 else ()
@@ -101,7 +168,8 @@ else ()
   # around with the settings in this block.
 
   # What to build and test
-  set (DOWNLOAD FALSE)
+  set (DOWNLOAD_TRILINOS FALSE)
+  set (DOWNLOAD_ALBANY FALSE)
   # See if we can get away with this for speed, at least until we get onto a
   # machine that can support a lengthy nightly.
   set (CLEAN_BUILD FALSE)
@@ -194,17 +262,17 @@ ENDIF()
 configure_file (${CTEST_SCRIPT_DIRECTORY}/CTestConfig.cmake
   ${CTEST_SOURCE_DIRECTORY}/CTestConfig.cmake COPYONLY)
 
-set (CTEST_NIGHTLY_START_TIME "00:00:00 UTC")
+set (CTEST_NIGHTLY_START_TIME "01:00:00 UTC")
 set (CTEST_CMAKE_COMMAND "${PREFIX_DIR}/bin/cmake")
 set (CTEST_COMMAND "${PREFIX_DIR}/bin/ctest -D ${CTEST_TEST_TYPE}")
 set (CTEST_BUILD_FLAGS "-j16")
 
-set (CTEST_DROP_METHOD "http")
+set (CTEST_DROP_METHOD "https")
 
-if (CTEST_DROP_METHOD STREQUAL "http")
-  set (CTEST_DROP_SITE "cdash.sandia.gov")
+if (CTEST_DROP_METHOD STREQUAL "https")
+  set (CTEST_DROP_SITE "sems-cdash-son.sandia.gov")
   set (CTEST_PROJECT_NAME "Albany")
-  set (CTEST_DROP_LOCATION "/CDash-2-3-0/submit.php?project=Albany")
+  set (CTEST_DROP_LOCATION "/cdash/submit.php?project=Albany")
   set (CTEST_TRIGGER_SITE "")
   set (CTEST_DROP_SITE_CDASH TRUE)
 endif ()
@@ -231,7 +299,7 @@ set (Albany_REPOSITORY_LOCATION git@github.com:SNLComputation/Albany.git)
 #  file(WRITE "${CTEST_BINARY_DIRECTORY}/CMakeCache.txt" "${CACHE_CONTENTS}")
 #endif ()
 
-if (DOWNLOAD)
+if (DOWNLOAD_TRILINOS)
   #
   # Get the internal Trilinos repo
   #
@@ -279,6 +347,9 @@ if (DOWNLOAD)
     endif ()
   endif ()
 
+ENDIF()
+
+IF (DOWNLOAD_ALBANY) 
   #
   # Get Albany
   #
@@ -313,7 +384,7 @@ if (DOWNLOAD)
   #    set (BUILD_PERIDIGM FALSE)
   #  endif ()    
   #endif ()
-endif ()
+ENDIF ()
 
 ctest_start(${CTEST_TEST_TYPE})
 
@@ -330,14 +401,11 @@ if (CTEST_DO_SUBMIT)
   endif (HAD_ERROR)
 endif (CTEST_DO_SUBMIT)
 
-if (DOWNLOAD)
+if (DOWNLOAD_TRILINOS)
 
   #
   # Update Trilinos
   #
-
-  set_property (GLOBAL PROPERTY SubProject Trilinos)
-  set_property (GLOBAL PROPERTY Label Trilinos)
 
   CTEST_UPDATE(SOURCE "${CTEST_SOURCE_DIRECTORY}/Trilinos" RETURN_VALUE count)
   # assumes that we are already on the desired tracking branch, i.e.,
@@ -363,8 +431,6 @@ if (DOWNLOAD)
   # Update the SCOREC repo
   #
   if (BUILD_SCOREC)
-    set_property (GLOBAL PROPERTY SubProject SCOREC)
-    set_property (GLOBAL PROPERTY Label SCOREC)
 
     set (CTEST_UPDATE_COMMAND "${CTEST_GIT_COMMAND}")
     CTEST_UPDATE(SOURCE "${CTEST_SOURCE_DIRECTORY}/Trilinos/SCOREC" RETURN_VALUE count)
@@ -387,12 +453,12 @@ if (DOWNLOAD)
     endif ()
   endif ()
 
+ENDIF()
+
+IF(DOWNLOAD_ALBANY) 
   #
   # Update Albany 
   #
-
-  set_property (GLOBAL PROPERTY SubProject Albany32Bit)
-  set_property (GLOBAL PROPERTY Label Albany32Bit)
 
   set (CTEST_UPDATE_COMMAND "${CTEST_GIT_COMMAND}")
   CTEST_UPDATE(SOURCE "${CTEST_SOURCE_DIRECTORY}/Albany" RETURN_VALUE count)
@@ -414,8 +480,6 @@ if (DOWNLOAD)
 
   # Peridigm
   #if (BUILD_PERIDIGM)
-  #  set_property (GLOBAL PROPERTY SubProject Peridigm)
-  #  set_property (GLOBAL PROPERTY Label Peridigm)
 
  #   set (CTEST_UPDATE_COMMAND "${CTEST_GIT_COMMAND}")
  #   CTEST_UPDATE (SOURCE "${CTEST_SOURCE_DIRECTORY}/Peridigm" RETURN_VALUE count)
@@ -539,19 +603,21 @@ set (COMMON_CONFIGURE_OPTIONS
   "-DTrilinos_ENABLE_PanzerExprEval:BOOL=ON"
   "-DTrilinos_ENABLE_PyTrilinos:BOOL=OFF"
   #
-  "-DTrilinos_ENABLE_STK:BOOL=ON"
+  #"-DTrilinos_ENABLE_STK:BOOL=ON"
+  #"-DTrilinos_ENABLE_STKExprEval:BOOL=ON"
   "-DTrilinos_ENABLE_SEACASIoss:BOOL=ON"
   "-DTrilinos_ENABLE_SEACASExodus:BOOL=ON"
-  "-DTrilinos_ENABLE_STKUtil:BOOL=ON"
-  "-DTrilinos_ENABLE_STKTopology:BOOL=ON"
+  #"-DTrilinos_ENABLE_STKUtil:BOOL=ON"
+  #"-DTrilinos_ENABLE_STKTopology:BOOL=ON"
   "-DTrilinos_ENABLE_STKMesh:BOOL=ON"
   "-DTrilinos_ENABLE_STKIO:BOOL=ON"
-  "-DTrilinos_ENABLE_STKExp:BOOL=OFF"
-  "-DTrilinos_ENABLE_STKSearch:BOOL=ON"
-  "-DTrilinos_ENABLE_STKSearchUtil:BOOL=ON"
-  "-DTrilinos_ENABLE_STKTransfer:BOOL=ON"
-  "-DTrilinos_ENABLE_STKUnit_tests:BOOL=OFF"
-  "-DTrilinos_ENABLE_STKDoc_tests:BOOL=OFF"
+  "-DTrilinos_ENABLE_STKExprEval:BOOL=ON"
+  #"-DTrilinos_ENABLE_STKExp:BOOL=OFF"
+  #"-DTrilinos_ENABLE_STKSearch:BOOL=ON"
+  #"-DTrilinos_ENABLE_STKSearchUtil:BOOL=ON"
+  #"-DTrilinos_ENABLE_STKTransfer:BOOL=ON"
+  #"-DTrilinos_ENABLE_STKUnit_tests:BOOL=OFF"
+  #"-DTrilinos_ENABLE_STKDoc_tests:BOOL=OFF"
   #
   "-DTrilinos_ENABLE_Kokkos:BOOL=ON"
   "-DTrilinos_ENABLE_KokkosCore:BOOL=ON"
@@ -661,6 +727,7 @@ if (BUILD_ALB32)
   set (CONF_OPTIONS
     "-DALBANY_TRILINOS_DIR:PATH=${CTEST_INSTALL_DIRECTORY}/TrilinosInstall"
     "-DENABLE_LCM:BOOL=ON"
+    "-DENABLE_TDM:BOOL=ON" 
     "-DENABLE_CONTACT:BOOL=OFF"
     "-DENABLE_LCM_SPECULATIVE:BOOL=OFF"
     "-DENABLE_LANDICE:BOOL=ON"
@@ -695,6 +762,7 @@ if (BUILD_ALB64)
     "-DENABLE_64BIT_INT:BOOL=ON"
 #    "-DENABLE_ALBANY_EPETRA:BOOL=OFF"
     "-DENABLE_LCM:BOOL=ON"
+    "-DENABLE_TDM:BOOL=ON" 
     "-DENABLE_LANDICE:BOOL=ON"
     "-DENABLE_LCM_SPECULATIVE:BOOL=OFF"
     "-DENABLE_STRONG_FPE_CHECK:BOOL=ON"
@@ -870,6 +938,7 @@ if (BUILD_ALB64CLANG)
 # Run even the epetra tests
 #    "-DENABLE_ALBANY_EPETRA:BOOL=OFF"
     "-DENABLE_LCM:BOOL=OFF"
+    "-DENABLE_TDM:BOOL=ON" 
     "-DENABLE_LANDICE:BOOL=ON"
     "-DENABLE_LCM_SPECULATIVE:BOOL=OFF"
     "-DENABLE_STRONG_FPE_CHECK:BOOL=OFF"
@@ -895,6 +964,7 @@ if (BUILD_ALB64CLANGDBG)
 # Run even the epetra tests
 #    "-DENABLE_ALBANY_EPETRA:BOOL=OFF"
     "-DENABLE_LCM:BOOL=ON"
+    "-DENABLE_TDM:BOOL=ON" 
     "-DENABLE_LANDICE:BOOL=ON"
     "-DENABLE_LCM_SPECULATIVE:BOOL=OFF"
     "-DENABLE_STRONG_FPE_CHECK:BOOL=ON"
@@ -991,6 +1061,7 @@ if (BUILD_ALB64DBG)
     "-DENABLE_ALBANY_EPETRA:BOOL=OFF"
     "-DENABLE_CONTACT:BOOL=OFF"
     "-DENABLE_LCM:BOOL=ON"
+    "-DENABLE_TDM:BOOL=ON" 
     "-DENABLE_LANDICE:BOOL=ON"
     "-DENABLE_LCM_SPECULATIVE:BOOL=OFF"
     "-DENABLE_STRONG_FPE_CHECK:BOOL=ON"
@@ -1011,6 +1082,7 @@ if (BUILD_ALBFUNCTOR)
   set (CONF_OPTIONS
     "-DALBANY_TRILINOS_DIR:PATH=${CTEST_INSTALL_DIRECTORY}/TrilinosInstall"
     "-DENABLE_LCM:BOOL=ON"
+    "-DENABLE_TDM:BOOL=ON" 
     "-DENABLE_LANDICE:BOOL=ON"
     "-DENABLE_ATO:BOOL=OFF"
     "-DENABLE_ASCR:BOOL=OFF"

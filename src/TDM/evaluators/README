@@ -1,0 +1,9 @@
+2020-5-26
+
+  In inut material file, one extra line should be added:
+
+  the block of "Powder Layer Initial Porosity". It's having two terms now. Assuming a single layer simulation with top layer porosity of 0.55.
+
+   - "Value" indicating the porosity for current block, which is the same as the old one. So it's 0 for dense and 0.55 for powder material (in the test cases)
+
+   - "Global Value" indicating the porosity of the top layer, this is requested as when we're in dense block we still need the top layer porosity to account for the ongoing consolidation. So it's 0.55 for both top and bottom blocks.

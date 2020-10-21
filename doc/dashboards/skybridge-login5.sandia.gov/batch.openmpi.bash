@@ -1,7 +1,7 @@
 #!/bin/bash
 ## Do not put any commands or blank lines before the #SBATCH lines
 #SBATCH --nodes=1                    # Number of nodes - all cores per node are allocated to the job
-#SBATCH --time=01:00:00               # Wall clock time (HH:MM:SS) - once the job exceeds this time, the job will be terminated (default is 5 minutes)
+#SBATCH --time=01:15:00               # Wall clock time (HH:MM:SS) - once the job exceeds this time, the job will be terminated (default is 5 minutes)
 #SBATCH --account=FY180068              # WC ID
 #SBATCH --job-name=AlbNightly               # Name of job
 #SBATCH --partition=short             # partition/queue name: short or batch
@@ -15,8 +15,8 @@
                                       #           large:  greater than 50% of cluster (special request)
                                       #           priority: High priority jobs (special request)
 
-#SBATCH --mail-type=ALL
-#SBATCH --mail-user=ikalash@sandia.gov
+##SBATCH --mail-type=ALL
+##SBATCH --mail-user=ikalash@sandia.gov
 #nodes=$SLURM_JOB_NUM_NODES           # Number of nodes - the number of nodes you have requested (for a list of SLURM environment variables see "man sbatch")
 #cores=1                             # Number MPI processes to run on each node (a.k.a. PPN)
                                      # tlcc2 has 16 cores per node
@@ -25,6 +25,8 @@ cd /home/ikalash/LCM
 export LCM_DIR=`pwd`
 module use --append $LCM_DIR/Albany/doc/LCM/modulefiles
 module load serial-intel-release
+./clean-update-config-build-dash.sh albany 8
+mv albany-serial-intel-release.log albany-serial-intel-release-build.log 
 ./test-dash.sh albany 
 bash process_results.sh
 bash send_email.sh

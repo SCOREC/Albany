@@ -64,6 +64,7 @@
        evaluators/LandIce_StokesL1L2Resid.cpp
        evaluators/LandIce_StokesRm.cpp
        evaluators/LandIce_StokesTauM.cpp
+       evaluators/LandIce_SurfaceAirEnthalpy.cpp
        evaluators/LandIce_Temperature.cpp
        evaluators/LandIce_ThicknessResid.cpp
        evaluators/LandIce_UpdateZCoordinate.cpp
@@ -217,6 +218,8 @@ ENDIF()
        evaluators/LandIce_StokesRm_Def.hpp
        evaluators/LandIce_StokesTauM.hpp
        evaluators/LandIce_StokesTauM_Def.hpp
+       evaluators/LandIce_SurfaceAirEnthalpy.hpp
+       evaluators/LandIce_SurfaceAirEnthalpy_Def.hpp
        evaluators/LandIce_Temperature.hpp
        evaluators/LandIce_Temperature_Def.hpp
        evaluators/LandIce_ThicknessResid_Def.hpp
@@ -287,7 +290,7 @@ add_library(LandIce ${Albany_LIBRARY_TYPE} ${SOURCES} ${HEADERS})
 set_target_properties(LandIce PROPERTIES PUBLIC_HEADER "${HEADERS}")
 
 IF(ENABLE_MPAS_INTERFACE)
-  add_library(mpasInterface STATIC ${SOURCESMPAS} ${HEADERSMPAS})
+  add_library(mpasInterface ${SOURCESMPAS} ${HEADERSMPAS})
   set_target_properties(mpasInterface PROPERTIES PUBLIC_HEADER "${HEADERSMPAS}")
   IF (INSTALL_ALBANY)
     install(TARGETS mpasInterface

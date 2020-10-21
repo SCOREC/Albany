@@ -2,8 +2,6 @@ macro(do_intel COMMON_CONFIGURE_OPTIONS BTYPE)
 
 # Intel
   message ("ctest state: BUILD_${BTYPE}")
-  set_property (GLOBAL PROPERTY SubProject ${BTYPE})
-  set_property (GLOBAL PROPERTY Label ${BTYPE})
 
   set (LABLAS_LIBRARIES "-L$ENV{SIERRA_MKL_LIB_PATH} -Wl,--start-group $ENV{SIERRA_MKL_LIB_PATH}/libmkl_intel_lp64.a $ENV{SIERRA_MKL_LIB_PATH}/libmkl_core.a $ENV{SIERRA_MKL_LIB_PATH}/libmkl_sequential.a -Wl,--end-group")
 
@@ -168,12 +166,36 @@ macro(do_intel COMMON_CONFIGURE_OPTIONS BTYPE)
       message ("Encountered build errors in Trilinos build. Exiting.")
       set (BUILD_INTEL_ALBANY FALSE)
     endif (BUILD_LIBS_NUM_ERRORS GREATER 0)
+
+# Run Trilinos tests 
+
+    set (CTEST_TEST_TIMEOUT 600)
+    CTEST_TEST(
+      BUILD "${CTEST_BINARY_DIRECTORY}/${BTYPE}"
+      #              PARALLEL_LEVEL "${CTEST_PARALLEL_LEVEL}"
+      #              INCLUDE_LABEL "^${TRIBITS_PACKAGE}$"
+      #NUMBER_FAILED  TEST_NUM_FAILED
+      RETURN_VALUE  HAD_ERROR
+      )
+
+    if (HAD_ERROR)
+      message("Some Trilinos tests failed.")
+    endif (HAD_ERROR)
+
+    if (CTEST_DO_SUBMIT)
+      ctest_submit (PARTS Test
+      RETURN_VALUE  S_HAD_ERROR
+      )
+
+      if (S_HAD_ERROR)
+        message ("Cannot submit Trilinos test results!")
+      endif (S_HAD_ERROR)
+    endif (CTEST_DO_SUBMIT)
+
   endif (BUILD_INTEL_TRILINOS)
 
 if (BUILD_INTEL_ALBANY)
   message ("ctest state: BUILD_INTEL_ALBANY")
-  set_property (GLOBAL PROPERTY SubProject AlbanyIntel)
-  set_property (GLOBAL PROPERTY Label AlbanyIntel)
 
   set (CONFIGURE_OPTIONS
     "-DALBANY_TRILINOS_DIR:PATH=${CTEST_INSTALL_DIRECTORY}/TrilinosIntelInstall"

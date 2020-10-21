@@ -1,4 +1,4 @@
-//*****************************************************************//
+ //*****************************************************************//
 //    Albany 3.0:  Copyright 2016 Sandia Corporation               //
 //    This Software is released under the BSD license detailed     //
 //    in the file "license.txt" in the top-level Albany directory  //
@@ -62,6 +62,10 @@ struct DirichletTraits
   };
   enum
   {
+    typeEe = PHAL::DirichletFactoryTraits<PHAL::AlbanyTraits>::id_expreval_sdbc
+  };
+  enum
+  {
     typeSw = PHAL::DirichletFactoryTraits<PHAL::AlbanyTraits>::id_schwarz_bc
   };
   enum
@@ -82,6 +86,10 @@ struct DirichletTraits
   enum
   {
     typeF = PHAL::DirichletFactoryTraits<PHAL::AlbanyTraits>::id_dirichlet_field
+  };
+  enum
+  {
+    typeSF = PHAL::DirichletFactoryTraits<PHAL::AlbanyTraits>::id_sdirichlet_field
   };
   enum
   {
@@ -114,7 +122,13 @@ struct DirichletTraits
   constructSDBCNameField(const std::string& ns, const std::string& dof);
 
   static std::string
+  constructExprEvalSDBCName(std::string const& ns, std::string const& dof);
+
+  static std::string
   constructScaledSDBCNameField(const std::string& ns, const std::string& dof);
+
+  static std::string
+  constructExprEvalSDBCNameField(std::string const& ns, std::string const& dof);
 
   static std::string
   constructTimeDepBCName(const std::string& ns, const std::string& dof);

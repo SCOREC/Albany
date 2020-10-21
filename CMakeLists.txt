@@ -24,6 +24,7 @@ if (NOT SET_COMPILERS_AUTOMATICALLY)
   project(Albany CXX C Fortran)
 endif ()
 
+
 # Advertise that we support shared libs
 SET_PROPERTY(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
 
@@ -370,6 +371,16 @@ IF (have_stk_List_ID GREATER -1)
     SET(ALBANY_STK_PERCEPT FALSE)
   ENDIF()
 
+  #set optional dependency on STKExprEval
+  LIST(FIND Trilinos_PACKAGE_LIST STKExprEval STKExprEval_List_ID)
+  IF (STKExprEval_List_ID GREATER -1)
+    MESSAGE("  -- Looking for STKExprEval:        Found.  Compiling with -DALBANY_STK_EXPR_EVAL.")
+    SET(ALBANY_STK_EXPR_EVAL TRUE)
+    add_definitions(-DALBANY_STK_EXPR_EVAL) 
+  ELSE()
+    MESSAGE("  -- Looking for STKExprEval:        NOT Found.")
+    SET(ALBANY_STK_EXPR_EVAL FALSE)
+  ENDIF()
 ELSE()
   MESSAGE("-- Looking for STK:                  NOT found.")
   SET(ALBANY_STK FALSE)
@@ -593,8 +604,6 @@ ELSE()
   SET(ALBANY_ATO FALSE)
 ENDIF()
 
-# set optional dependency on LCM, defaults to Disabled
-OPTION(ENABLE_LCM_TEST_EXES "Flag to turn on LCM Mechanics test executables" ON)
 OPTION(DISABLE_LCM_EXODIFF_SENSITIVE_TESTS "Flag to turn off LCM exodiff sensitive tests" OFF)
 SET(LCM_TEST_EXES FALSE)
 IF (ENABLE_LCM OR ENABLE_ATO)
@@ -827,17 +836,6 @@ ELSE()
   SET(ALBANY_ASCR FALSE)
 ENDIF()
 
-# Set optional dependency on AMP, defaults to Disabled
-OPTION(ENABLE_AMP "Flag to turn on AMP (additive manufacturing processes) source code" OFF)
-IF (ENABLE_AMP)
-  SET(ALBANY_APF TRUE)
-  MESSAGE("-- AMP                             is Enabled")
-  SET(ALBANY_AMP TRUE)
-ELSE()
-  MESSAGE("-- AMP                             is NOT Enabled.")
-  SET(ALBANY_AMP FALSE)
-ENDIF()
-
 # Set optional dependency on SCOREC PUMI,  optional adaptivity
 OPTION(ENABLE_SCOREC "Flag to turn on SCOREC dependency" OFF)
 SET(ALBANY_SCOREC_DIR "" CACHE PATH "Path to standalone SCOREC installation")
@@ -877,6 +875,25 @@ IF (ALBANY_APF)
 ELSE()
   MESSAGE("-- APF                             is NOT Enabled.")
 ENDIF()
+
+# Set optional dependency on TDM, defaults to Disabled
+OPTION(ENABLE_TDM "Flag to turn on TDM source code" OFF)
+IF (ENABLE_TDM)
+  IF (NOT ENABLE_SCOREC) 
+    MESSAGE(FATAL_ERROR
+    "\nError: TDM requires enabling SCOREC!  Re-compile with -DENABLE_SCOREC=ON!")
+  ENDIF()
+  SET(ALBANY_APF TRUE)
+  ADD_DEFINITIONS(-DALBANY_TDM)
+  MESSAGE("-- TDM       is Enabled, compiling with -DALBANY_TDM")
+  SET(ALBANY_TDM TRUE)
+ELSE()
+  MESSAGE("-- TDM       is NOT Enabled.")
+  SET(ALBANY_TDM FALSE)
+ENDIF()
+
+# set optional dependency on LCM, defaults to Disabled
+OPTION(ENABLE_LCM_TEST_EXES "Flag to turn on LCM Mechanics test executables" ON)
 
 OPTION(ENABLE_OMEGA_H "Enable Omega_h dependency for adaptation" OFF)
 SET(ALBANY_OMEGA_H_DIR "" CACHE PATH "Path to Omega_h installation")
@@ -971,6 +988,15 @@ IF(ENABLE_FAD_TYPE STREQUAL ENABLE_TAN_FAD_TYPE)
 ELSE()
   SET(ALBANY_FADTYPE_NOTEQUAL_TANFADTYPE TRUE)
   MESSAGE("-- FAD_TYPE is not TAN_FAD_TYPE")
+ENDIF()
+  
+LIST(FIND Trilinos_PACKAGE_LIST Pamgen PAMGEN_List_ID)
+IF (NOT PAMGEN_List_ID GREATER -1)
+  MESSAGE("-- Pamgen   is Enabled.  Building Pamgen tests")
+  set(ALBANY_PAMGEN TRUE)
+ELSE()
+  MESSAGE("-- Pamgen   is NOT Enabled.  Not building Pamgen tests")
+  set(ALBANY_PAMGEN FALSE)
 ENDIF()
 
 # optionally disable the use of the Trilinos stokhos package
@@ -1129,6 +1155,12 @@ IF (ALBANY_LIBRARIES_ONLY)
   ENDIF()
 ENDIF()
 
+#Add option to disable all tests 
+OPTION(DISABLE_ALBANY_TESTS "Flag to disable tests" OFF)
+IF (DISABLE_ALBANY_TESTS)
+  MESSAGE("-- DISABLE_ALBANY_TESTS is ON.  Tests will not be built.")
+ENDIF()
+
 # Add option to include Dakota restart tests in the test suite
 IF (NOT APPLE)
   CMAKE_DEPENDENT_OPTION(ENABLE_DAKOTA_RESTART_EXAMPLES "Flag to include Dakota restart tests" ON
@@ -1212,6 +1244,15 @@ ELSE()
   SET(ALBANY_PERFORMANCE_TESTS FALSE)
 ENDIF()
 
+# Add option to enable Albany unit tests.
+OPTION(ENABLE_UNIT_TESTS "Flag to turn on Unit Tests" OFF)
+IF (ENABLE_UNIT_TESTS)
+  MESSAGE("-- Unit Tests                are Enabled, adding tests/*/UnitTests")
+  SET(ALBANY_UNIT_TESTS TRUE)
+ELSE()
+  MESSAGE("-- Unit Tests                are NOT Enabled.")
+  SET(ALBANY_UNIT_TESTS FALSE)
+ENDIF()
 
 # Add option to enable performance tests. Results are machine-specific
 OPTION(ENABLE_LARGE_TESTS "Run tests from the Albany-large-tests repository" ON)
@@ -1301,8 +1342,13 @@ IF (DEFINED ALBANY_SEACAS_PATH)
 ENDIF()
 
 # Add Albany test -- in the "tests" directory
-IF (ALBANY_LIBRARIES_ONLY)
-  MESSAGE("\nALBANY_LIBRARIES_ONLY has been set: turning off all tests.")
+IF (ALBANY_LIBRARIES_ONLY OR DISABLE_ALBANY_TESTS)
+  IF (ALBANY_LIBRARIES_ONLY) 
+    MESSAGE("\nALBANY_LIBRARIES_ONLY has been set: turning off all tests.")
+  ENDIF()
+  IF (DISABLE_ALBANY_TESTS) 
+    MESSAGE("\nDISABLE_ALBANY_TESTS has been set: turning off all tests.")
+  ENDIF()
 ELSE()
   add_subdirectory(tests)
 ENDIF()

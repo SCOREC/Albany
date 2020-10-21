@@ -24,7 +24,7 @@ namespace LandIce
   This evaluator computes enthalpy of the ice at pressure-melting temperature Tm(p).
  */
 
-template<typename EvalT, typename Traits, typename PressST, typename SurfTempST>
+template<typename EvalT, typename Traits, typename PressST>
 class PressureMeltingEnthalpy: public PHX::EvaluatorWithBaseImpl<Traits>,
                                public PHX::EvaluatorDerived<EvalT, Traits>
 {
@@ -40,15 +40,13 @@ public:
 
 private:
   typedef typename EvalT::ParamScalarT ParamScalarT;
-  // Input:
+
   // Input:
   PHX::MDField<const PressST,Cell,Node>     pressure;    //[Pa], [kg m^{-1} s^{-2}]
-  PHX::MDField<const SurfTempST,Cell,Node>  surfaceTemp; //[K]
 
   // Output:
   PHX::MDField<PressST,Cell,Node>      meltingTemp; //[K]
   PHX::MDField<PressST,Cell,Node>      enthalpyHs;       //[MW s m^{-3}]
-  PHX::MDField<SurfTempST,Cell,Node>   surfaceEnthalpy;  //[MW s m^{-3}]
 
   int numNodes;
 
