@@ -17,5 +17,6 @@ add_subdirectory(BimetallicStrip)
 # RCU is broken and likely may not be repaired
 #add_subdirectory(RCU)
 add_subdirectory(Restart)
+add_subdirectory(Restart_Interval)
 add_subdirectory(Dynamics)
 add_subdirectory(DOFOffset)
