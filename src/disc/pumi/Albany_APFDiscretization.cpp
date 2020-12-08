@@ -372,8 +372,16 @@ void APFDiscretization::writeAnySolutionToFile(const double time_value)
   removeQPStatesFromAPF();
   removeNodalDataFromAPF();
 
-  if ((continuationStep == meshStruct->restartWriteStep) &&
-      (continuationStep != 0)) {
+  bool not_zeroth_step        = continuationStep != 0;
+  bool write_restart_single   = continuationStep == meshStruct->restartWriteStep;
+  bool write_restart_interval = false;
+  if (meshStruct->restartWriteStepInterval != 0 )
+  {
+    write_restart_interval= (continuationStep % meshStruct->restartWriteStepInterval) == 0;
+  }
+
+  bool write_restart = (write_restart_interval || write_restart_single) && not_zeroth_step;
+  if (write_restart) {
     writeRestartFile(time_label);
   }
 
