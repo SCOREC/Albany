@@ -140,7 +140,7 @@ Albany::PUMIMeshStruct::PUMIMeshStruct(
 
   // get the continuation step to write a restart file
   restartWriteStep = params->get<int>("Write Restart File at Step",0);
-  restartWriteStepInterval = params->get<int>("Write Restart File at Step",0);
+  restartWriteStepInterval = params->get<int>("Write Restart File at Step Interval",0);
 
   APFMeshStruct::init(params, commT);
 
@@ -205,7 +205,7 @@ Albany::PUMIMeshStruct::getValidDiscretizationParameters() const
   validPL->set<std::string>("Mesh Model Input File Name", "", "meshmodel geometry file");
 
   validPL->set<int>("Write Restart File at Step", 0, "Continuation step to write restart files");
-  validPL->set<int>("Write Restart File at Every Nth Step", 0, "Continuation step interval to write restart files");
+  validPL->set<int>("Write Restart File at Step Interval", 0, "Continuation step interval to write restart files");
   validPL->set<double>("PUMI Restart Time", 0, "Simulation time to restart from");
   validPL->set<bool>("Load LandIce Data", false, "Load fields required for LandIce FO problem");
 
