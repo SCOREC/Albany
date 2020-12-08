@@ -26,6 +26,7 @@ Albany::SimMeshStruct::SimMeshStruct(
   outputInterval = params->get<int>("Sim Write Interval", 1); // write every time step default
 
   restartWriteStep = 0; // restart not supported yet
+  restartWriteStepInterval = 0; // restart not supported yet
 
   std::string native_file;
   if (params->isParameter("Acis Model Input File Name"))
