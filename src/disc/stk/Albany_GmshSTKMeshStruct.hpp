@@ -18,6 +18,14 @@ enum class GmshVersion
   V4_1
 };
 
+struct names
+{
+  std::string name;
+  int         id;
+  int         dim;
+};
+  
+
 class GmshSTKMeshStruct : public GenericSTKMeshStruct
 {
   public:
@@ -150,7 +158,7 @@ class GmshSTKMeshStruct : public GenericSTKMeshStruct
 
   // Reads a single physical name from ifile.
   // Prepends with an undescore and remove quotation marks.
-  void get_name_for_physical_names( std::string& name, std::ifstream& ifile);
+  void add_name_for_physical_names( std::ifstream& ifile);
 
   // Reads ifile to map surface tags to physical tags.
   // Reports error if any surface is associted with more than one tag.
@@ -188,8 +196,14 @@ class GmshSTKMeshStruct : public GenericSTKMeshStruct
   // Init the int counters below to zero.
   void init_counters_to_zero();
 
+  // Print the counters for debugging help
+  void debug_print_counters();
+
   // Init the int pointers below to null.
   void init_pointers_to_null();
+
+  // Vector of names of physical entities
+  std::vector<names> names_vector;
 
 
   // The number of entities, both elements and cells

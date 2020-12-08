@@ -237,6 +237,22 @@ void Albany::GmshSTKMeshStruct::determine_file_type( bool& legacy, bool& binary,
   return;
 }
 
+void Albany::GmshSTKMeshStruct::debug_print_counters()
+{
+  std::cout 
+    << "NumSides = " <<  NumSides << std::endl
+    << "NumNodes = " <<  NumNodes << std::endl
+    << "NumElems = " <<  NumElems << std::endl
+    << "nb_hexas = " <<  nb_hexas << std::endl
+    << "nb_tetra = " <<  nb_tetra << std::endl
+    << "nb_tet10 = " <<  nb_tet10 << std::endl
+    << "nb_quads = " <<  nb_quads << std::endl
+    << "nb_trias = " <<  nb_trias << std::endl
+    << "nb_tri6  = " <<  nb_tri6  << std::endl
+    << "nb_lines = " <<  nb_lines << std::endl
+    << "nb_line3 = " <<  nb_line3 << std::endl;
+}
+
 void Albany::GmshSTKMeshStruct::init_counters_to_zero()
 {
   NumSides = 0;
@@ -751,6 +767,7 @@ void Albany::GmshSTKMeshStruct::set_specific_num_of_each_elements( std::ifstream
     }
   }
 
+
   bool is_first_order  = (nb_lines != 0);
   bool is_second_order = (nb_line3 != 0);
 
@@ -784,14 +801,19 @@ void Albany::GmshSTKMeshStruct::set_specific_num_of_each_elements( std::ifstream
          missing_parts = (nb_tet10 == 0) || missing_parts;
 
     TEUCHOS_TEST_FOR_EXCEPTION ( missing_parts, std::logic_error, 
-        "Error! This second order mesh is missing secord order parts.\n");
+        "Error! This second order mesh is missing second order parts.\n");
     
   }
   else
   {
-    TEUCHOS_TEST_FOR_EXCEPTION( true, std::logic_error,
-            "Error! Could not determine if mesh was first or second order.\n" <<
-            "Checked for number of 2pt lines and 3pt lines, both are non-zero. \n")
+    Teuchos::RCP<Teuchos::FancyOStream> out = 
+           Teuchos::fancyOStream(Teuchos::rcpFromRef(std::cout));
+    *out << "WARNING! \n"
+         << "Checked for number of 2pt lines and 3pt lines, both are non-zero. \n"
+         << "This could be because: \n"
+         << "  - The mesh was written by gmsh V4.5.+ as lines were no longer written.\n"
+         << "  - The mesh was not written/read correctly and no lines exist.\n"
+         << "\n";
   }
 
   return;
@@ -1536,11 +1558,12 @@ void Albany::GmshSTKMeshStruct::open_fname( std::ifstream& ifile)
   return;
 }
 
-void Albany::GmshSTKMeshStruct::get_name_for_physical_names( std::string& name, std::ifstream& ifile)
+void Albany::GmshSTKMeshStruct::add_name_for_physical_names( std::ifstream& ifile)
 {
   std::string line;
   int         id;
   int         dim;
+  std::string name;
   
   std::getline( ifile, line);
   std::stringstream ss (line);
@@ -1561,6 +1584,13 @@ void Albany::GmshSTKMeshStruct::get_name_for_physical_names( std::string& name, 
     name.erase( std::remove(name.begin(), name.end(), '"'), name.end());
     name = "_" + name;
   }
+
+  names name_instant;
+  name_instant.name = name;
+  name_instant.id   = id;
+  name_instant.dim  = dim;
+
+  names_vector.push_back(name_instant);
 
   return;
 }
@@ -1636,8 +1666,7 @@ void Albany::GmshSTKMeshStruct::read_physical_names_from_file( std::map<std::str
     for( size_t i = 0; i < num_physical_names; i++)
     {
       std::string name;
-      get_name_for_physical_names( name, ifile);
-      names.push_back( name);
+      add_name_for_physical_names( ifile);
     }
 
     // Advance to Surface Entities section
@@ -1662,21 +1691,34 @@ void Albany::GmshSTKMeshStruct::read_physical_names_from_file( std::map<std::str
     std::map< int, int> physical_surface_tags;
     get_physical_tag_to_surface_tag_map( ifile, physical_surface_tags, num_surfaces);
 
-    std::stringstream error_msg;
-    error_msg << "Cannot support more than one physical tag per surface \n"
-              << "(but you should have gotten an error before this!)    \n"
-              << "physical_surface_tags.size() = " << physical_surface_tags.size() << ". \n"
-              << "names.size() = " << names.size() << ". \n";
-    TEUCHOS_TEST_FOR_EXCEPTION ( physical_surface_tags.size() != names.size(), std::runtime_error, error_msg.str());
+
+    if( physical_surface_tags.size() != names_vector.size())
+    {
+      Teuchos::RCP<Teuchos::FancyOStream> out = 
+             Teuchos::fancyOStream(Teuchos::rcpFromRef(std::cout));
+    *out << "WARNING! \n"
+         << "Cannot support more than one physical tag per surface. \n"
+         << "physical_surface_tags.size() = " << physical_surface_tags.size() << ". \n"
+         << "names_vector.size() = " << names_vector.size() << ". \n"
+         << "This may either have been caused by: \n"
+         << "   - A surface has two names. This will likely cause errors later.\n"
+         << "   - A volume has a name. Volume phyiscal names are not yet supported.\n"
+         << "\n";
+
+    }
 
     // Add each physical name pair to the map
-    for( int i = 0; i < names.size(); i++)
+    for( int i = 0; i < names_vector.size(); i++)
     {
-      std::string name = names[i];
-      // Index by i+1 since gmsh starts counting at 1 and not 0
-      int surface_tag  = physical_surface_tags[i+1];
+      // Currently can't handle physical names for volumes
+      if( (names_vector[i]).dim != 3)
+      {
+        std::string name = (names_vector[i]).name;
+        // Index by i+1 since gmsh starts counting at 1 and not 0
+        int surface_tag  = physical_surface_tags[i+1];
 
-      physical_names.insert( std::make_pair( name, surface_tag));
+        physical_names.insert( std::make_pair( name, surface_tag));
+      }
     }
 
   }
