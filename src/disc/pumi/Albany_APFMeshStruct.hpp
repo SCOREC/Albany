@@ -111,6 +111,7 @@ class APFMeshStruct : public Albany::AbstractMeshStruct {
     bool hasRestartSolution;
     double restartDataTime;
     int restartWriteStep;
+    int restartWriteStepInterval;
 
     bool shouldLoadLandIceData;
     bool shouldWriteAsciiVtk;
