@@ -237,12 +237,12 @@ CreepModel<EvalT, Traits>::computeState(
 //      }
         
 
+      int const max_count = max_return_map_count;
       // check yield condition
-      if (f <= 0.0) {
-//      std::cout << "f = " << f << " <= 0. Not yielding." << std::endl;
-        if (a0 > 1.0E-12) {
-//          std::cout << "a0 = " << a0 << " > 1E-12. Entered return mapping algorithm." 
-//            << std::endl;
+      if (f <= 0.0) 
+      {
+        if (a0 > 1.0E-12) 
+        {
           // return mapping algorithm
           bool      converged     = false;
           ScalarT   alpha         = 0.0;
@@ -250,7 +250,6 @@ CreepModel<EvalT, Traits>::computeState(
           ScalarT   res_norm      = 1.0;
           ScalarT   original_res  = 1.0;
           int       count         = 0;
-          int const max_count     = max_return_map_count;
           // ScalarT H = 0.0;
           dgam = 0.0;
           ScalarT debug_X[max_count + 1];
@@ -302,19 +301,6 @@ CreepModel<EvalT, Traits>::computeState(
           original_res  = F[0];
 
           while (!converged && count <= max_count) {
-//            std::cout
-//              << std::endl
-//              << "Attempt " << count << " to converge creep's dGamma." << std::endl
-//              << "Important values: " << std::endl
-//              << "dt = " << dt << std::endl
-//              << "mu = " << mu << std::endl
-//              << "temp_adj_relaxation_para_ = " << temp_adj_relaxation_para_ << std::endl
-//              << "strain_rate_expo_ = " << strain_rate_expo_ << std::endl
-//              << "a0 = " << a0 << std::endl
-//              << "a1 = " << a1 << std::endl
-//              << "F[0] = residual = " << F[0] << std::endl
-//              << "X[0] = dGam = " << X[0] << std::endl
-//              << "dFdX[0] = " << dFdX[0] << std::endl;
             count++;
             solver.solve(dFdX, X, F);
 
@@ -351,21 +337,8 @@ CreepModel<EvalT, Traits>::computeState(
             debug_res[count] = res;
             res_norm         = res/original_res;
 
-//            std::cout
-//              << "res_norm = " << res_norm << std::endl
-//              << "return_map_tolerance = " << return_map_tolerance << std::endl;
-
-
             if (res_norm < return_map_tolerance || res < return_map_tolerance) 
             { 
-
-//              std::cout  
-//                << "Converged!" << std::endl
-//                << "a0 - 2. / 3. * X[0] * a1 = " <<  (a0 - 2. / 3. * X[0] * a1)  << std::endl
-//                << "F[0] = residual = " << F[0] << std::endl
-//                << "X[0] = dGam = " << X[0] << std::endl
-//                << "dFdX[0] = " << dFdX[0] << std::endl;
-
               converged = true; 
             }
 
@@ -425,12 +398,16 @@ CreepModel<EvalT, Traits>::computeState(
               Fp(cell, pt, i, j) = Fpnew(i, j);
             }
           }
-        } else {
+        }  
+        else 
+        {
 //          std::cout << "a0 = " << a0 << " <= 1E-12. Skipped return mapping algorithm." 
 //            << std::endl;
           eqps(cell, pt) = eqpsold(cell, pt);
-          for (int i(0); i < num_dims_; ++i) {
-            for (int j(0); j < num_dims_; ++j) {
+          for (int i(0); i < num_dims_; ++i) 
+          {
+            for (int j(0); j < num_dims_; ++j) 
+            {
               Fp(cell, pt, i, j) = Fpn(i, j);
             }
           }
@@ -438,14 +415,17 @@ CreepModel<EvalT, Traits>::computeState(
       } 
       else // Material is yielding...
       {
-        bool    converged = false;
-        ScalarT H         = 0.0;
-        ScalarT dH        = 0.0;
-        ScalarT alpha     = 0.0;
-        ScalarT res       = 0.0;
-        int     count     = 0;
-        dgam              = 0.0;
-        // smag_new = 0.0;
+        bool    converged    = false;
+        ScalarT H            = 0.0;
+        ScalarT dH           = 0.0;
+        ScalarT alpha        = 0.0;
+        ScalarT res          = 0.0;
+        ScalarT original_res = 0.0;
+        ScalarT res_norm     = 0.0;
+        int     count        = 0;
+
+        // smag_new     = 0.0;
+        dgam         = 0.0;
         dgam_plastic = 0.0;
 
         LocalNonlinearSolver<EvalT, Traits> solver;
@@ -458,7 +438,10 @@ CreepModel<EvalT, Traits>::computeState(
         X[0]    = 0.0;
         dFdX[0] = (-2. * mubar) * (1. + H / (3. * mubar));
 
-        while (!converged) {
+        original_res = F[0];
+
+        while (!converged)  
+        {
           count++;
           solver.solve(dFdX, X, F);
           H = 2. * mubar * dt * temp_adj_relaxation_para_ *
@@ -475,16 +458,22 @@ CreepModel<EvalT, Traits>::computeState(
           F[0]    = f - 2. * mubar * (1. + K / (3. * mubar)) * X[0] - H;
           dFdX[0] = -2. * mubar * (1. + K / (3. * mubar)) - dH;
 
-          res = std::abs(F[0]);
-          if (res < 1.e-10 || res / f < 1.E-11) converged = true;
+          res      = std::abs(F[0]);
+          res_norm = res/original_res;
+          if (res < return_map_tolerance || res_norm < return_map_tolerance)
+          {
+             converged = true;
+          }
 
           TEUCHOS_TEST_FOR_EXCEPTION(
-              count > 30,
+              count > max_count,
               std::runtime_error,
               std::endl
                   << "Error in return mapping, count = " << count
-                  << "\nres = " << res << "\nrelres = " << res / f
-                  << "\ng = " << F[0] << "\ndg = " << dFdX[0] << std::endl);
+                  << "\nres = " << res 
+                  << "\nres_norm = " << res_norm
+                  << "\ng = " << F[0] 
+                  << "\ndg = " << dFdX[0] << std::endl);
         }
         solver.computeFadInfo(dFdX, X, F);
 
@@ -511,12 +500,18 @@ CreepModel<EvalT, Traits>::computeState(
         eqps(cell, pt) = alpha;
 
         // mechanical source
-        if (have_temperature_ && dt > 0) {
-          source(cell, pt) =
-              0.0 *
-              (sq23 * dgam / dt * (Y + H + temperature_(cell, pt))) /
-              (density_ * heat_capacity_);
-        }
+        /* The below source heat calculation is not correct.
+         *  It is not correct because the yield strength (Y)
+         *  is being added to the temperature (temperature_)
+         *  which is dimensionally wrong.
+         *
+         * if (have_temperature_ && dt > 0) {
+         *   source(cell, pt) =
+         *       0.0 *
+         *       (sq23 * dgam / dt * (Y + H + temperature_(cell, pt))) /
+         *       (density_ * heat_capacity_);
+         * }
+         */
 
         // exponential map to get Fpnew
         A     = dgam * N;
