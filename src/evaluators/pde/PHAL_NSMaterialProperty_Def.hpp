@@ -368,22 +368,8 @@ evaluateFields(typename Traits::EvalData workset)
     std::vector<double> coeff_values;
     for( int col=0; col< num_data_cols; col++)
     {
-      std::cout << "col = " << col << std::endl;
-      std::cout << "index = " << index << std::endl;
-
       double coeff_value;
       std::vector<double> row_data = array_data[col];
-
-      for( int i = 0; i < time_data.size(); i++)
-      {
-        std::cout << "time_data.size() = " << time_data.size() << std::endl;
-        std::cout << "time_data["<<i<<"] = " << time_data[i] << std::endl;
-      }
-      for( int i = 0; i < row_data.size(); i++)
-      {
-        std::cout << "row_data.size() = " << row_data.size() << std::endl;
-        std::cout << "row_data["<<i<<"] = " << row_data[i] << std::endl;
-      }
 
       if (index == 0)
       {
@@ -408,12 +394,7 @@ evaluateFields(typename Traits::EvalData workset)
 	      double z = Sacado::ScalarValue<MeshScalarT>::eval(coordVec(cell,qp,2));
 
         double value = coeff_values[0] + coeff_values[1]*z*z;
-        std::cout 
-          << "Time = " << time << std::endl
-          << "\tcoeff_values[0] = " << coeff_values[0] << std::endl
-          << "\tcoeff_values[1] = " << coeff_values[1] << std::endl
-          << "\tvalue = " << value << std::endl;
-        matprop(cell,qp) = 294.0; //value;
+        matprop(cell,qp) = value;
       }
     }
   }
