@@ -598,6 +598,9 @@ MechanicsProblem::constructEvaluators(
     if (temp_type == "Time Dependent") {
       paramList.set<std::string>("Type", temp_type);
     }
+    else if (temp_type == "Interpolate From File") {
+      paramList.set<std::string>("Type", temp_type);
+    }
 
     p->set<Teuchos::ParameterList*>("Parameter List", &paramList);
 

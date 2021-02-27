@@ -5,23 +5,33 @@
 //*****************************************************************//
 
 #include <fstream>
+#include <sstream>
+#include <string>
 #include "Teuchos_TestForException.hpp"
 #include "Phalanx_DataLayout.hpp"
 #include "Sacado_ParameterRegistration.hpp"
 #include "Albany_Utils.hpp"
 
+#include "Intrepid2_FunctionSpaceTools.hpp"
+#include "Intrepid2_DefaultCubatureFactory.hpp"
+#include "Albany_ThyraUtils.hpp"
+#include "Albany_ProblemUtils.hpp"
+#include "Albany_DistributedParameterLibrary.hpp"
+#include "PHAL_Neumann.hpp"
+
 namespace PHAL {
 
 template<typename EvalT, typename Traits>
 NSMaterialProperty<EvalT, Traits>::
-NSMaterialProperty(Teuchos::ParameterList& p) :
-  name_mp(p.get<std::string>("Material Property Name")),
-  layout(p.get<Teuchos::RCP<PHX::DataLayout> >("Data Layout")),
+NSMaterialProperty(Teuchos::ParameterList& p_) :
+  name_mp(p_.get<std::string>("Material Property Name")),
+  layout(p_.get<Teuchos::RCP<PHX::DataLayout> >("Data Layout")),
   matprop(name_mp,layout),
   rank(layout->rank()),
   dims(),
   matPropType(SCALAR_CONSTANT)
 {
+  p = p_;
   layout->dimensions(dims);
 
   double default_value = p.get("Default Value", 1.0);
@@ -176,6 +186,57 @@ NSMaterialProperty(Teuchos::ParameterList& p) :
       // Add property as a Sacado-ized parameter
     this->registerSacadoParameter(name_mp, paramLib);
   }
+  else if (type == "Interpolate From File") {
+    matPropType = INTERP_FROM_FILE;
+    file_name = mp_list->get<std::string>("File Name");
+    num_cols  = mp_list->get<int>("Number of Columns");
+
+    num_data_cols = num_cols - 1;
+
+    std::ifstream source;
+    source.open( file_name, std::ios_base::in);
+
+    // Iterate through each line of the file
+    int line_number = 0;
+    for( std::string line; std::getline( source, line);)
+    {
+      std::istringstream in( line);
+
+      double time = 0.0;
+      in >> time;
+      time_data.push_back( time);
+
+
+      double value = 0.0;
+      for( int col=0; col<num_data_cols; col++)
+      {
+        in >> value;
+        // Need to create column vector heads
+        // when on first line
+        if ( line_number == 0)
+        {
+          std::vector<RealType> vec;
+          vec.push_back( value);
+          array_data.push_back(vec);
+        }
+        // Can otherwise just add to the existing vectors
+        else
+        {
+          (array_data[col]).push_back(value);
+        }
+      }
+      line_number++;
+    }
+    // Add property as a Sacado-ized parameter
+    this->registerSacadoParameter(name_mp, paramLib);
+
+    Teuchos::RCP<PHX::DataLayout> coord_dl =
+      p.get< Teuchos::RCP<PHX::DataLayout> >("Coordinate Vector Data Layout");
+    coordVec = decltype(coordVec)(
+      p.get<std::string>("Coordinate Vector Name"),
+      coord_dl);
+    this->addDependentField(coordVec.fieldTag());
+  }
   else {
     TEUCHOS_TEST_FOR_EXCEPTION(true, Teuchos::Exceptions::InvalidParameter,
 		       "Invalid material property type " << type);
@@ -192,6 +253,8 @@ postRegistrationSetup(typename Traits::SetupData d,
                       PHX::FieldManager<Traits>& fm)
 {
   this->utils.setFieldData(matprop,fm);
+  if (matPropType == INTERP_FROM_FILE)
+    this->utils.setFieldData(coordVec,fm);
 #ifdef ALBANY_STOKHOS
   if (matPropType == KL_RAND_FIELD || matPropType == EXP_KL_RAND_FIELD)
     this->utils.setFieldData(coordVec,fm);
@@ -286,6 +349,74 @@ evaluateFields(typename Traits::EvalData workset)
       }
     }
   }
+  else if (matPropType == INTERP_FROM_FILE) 
+  {
+    RealType time = workset.current_time;
+
+    // Check to see if the interpolator has become an extrapolator
+    TEUCHOS_TEST_FOR_EXCEPTION(
+       time > time_data.back(), Teuchos::Exceptions::InvalidParameter,
+      "Time has exceded the last time value of the given interpolation file!"<< "\n"
+        << "\ttime = " << time << "\n"
+        << "\ttime_data.back() = " << time_data.back() << "\n" );
+
+
+    unsigned int index(0);
+    while (time_data[index] < time)
+      index++;
+
+    std::vector<double> coeff_values;
+    for( int col=0; col< num_data_cols; col++)
+    {
+      std::cout << "col = " << col << std::endl;
+      std::cout << "index = " << index << std::endl;
+
+      double coeff_value;
+      std::vector<double> row_data = array_data[col];
+
+      for( int i = 0; i < time_data.size(); i++)
+      {
+        std::cout << "time_data.size() = " << time_data.size() << std::endl;
+        std::cout << "time_data["<<i<<"] = " << time_data[i] << std::endl;
+      }
+      for( int i = 0; i < row_data.size(); i++)
+      {
+        std::cout << "row_data.size() = " << row_data.size() << std::endl;
+        std::cout << "row_data["<<i<<"] = " << row_data[i] << std::endl;
+      }
+
+      if (index == 0)
+      {
+        coeff_value = row_data[index];
+      }
+      else 
+      {
+        double slope = ((row_data[index] - row_data[index - 1]) /
+                           (time_data[index] - time_data[index - 1]));
+        coeff_value = row_data[index-1] + slope * (time - time_data[index - 1]);
+      }
+      coeff_values.push_back( coeff_value);
+    }
+
+
+    for (std::size_t cell=0; cell < workset.numCells; ++cell) 
+    {
+      for (std::size_t qp=0; qp < dims[1]; ++qp) 
+      {
+	      //auto x = Sacado::ScalarValue<MeshScalarT>::eval(coordVec(cell,qp,0));
+	      //auto y = Sacado::ScalarValue<MeshScalarT>::eval(coordVec(cell,qp,1));
+	      double z = Sacado::ScalarValue<MeshScalarT>::eval(coordVec(cell,qp,2));
+
+        double value = coeff_values[0] + coeff_values[1]*z*z;
+        std::cout 
+          << "Time = " << time << std::endl
+          << "\tcoeff_values[0] = " << coeff_values[0] << std::endl
+          << "\tcoeff_values[1] = " << coeff_values[1] << std::endl
+          << "\tvalue = " << value << std::endl;
+        matprop(cell,qp) = 294.0; //value;
+      }
+    }
+  }
 #ifdef ALBANY_STOKHOS
   else {
     for (std::size_t cell=0; cell < workset.numCells; ++cell) {
@@ -310,7 +441,8 @@ NSMaterialProperty<EvalT,Traits>::getValue(const std::string &n)
   if (matPropType == SCALAR_CONSTANT ||
       matPropType == SQRT_TEMP ||
       matPropType == INV_SQRT_TEMP ||
-      matPropType == TIME_DEP_SCALAR) {
+      matPropType == TIME_DEP_SCALAR ||
+      matPropType == INTERP_FROM_FILE) {
     return scalar_constant_value;
   }
   else if (matPropType == VECTOR_CONSTANT) {

@@ -153,10 +153,11 @@ class MechanicsProblem : public AbstractProblem
   ///
   enum MECH_VAR_TYPE
   {
-    MECH_VAR_TYPE_NONE,      //! Variable does not appear
-    MECH_VAR_TYPE_CONSTANT,  //! Variable is a constant
-    MECH_VAR_TYPE_DOF,       //! Variable is a degree-of-freedom
-    MECH_VAR_TYPE_TIMEDEP    //! Variable is stepped by LOCA in time
+    MECH_VAR_TYPE_NONE,       //! Variable does not appear
+    MECH_VAR_TYPE_CONSTANT,   //! Variable is a constant
+    MECH_VAR_TYPE_DOF,        //! Variable is a degree-of-freedom
+    MECH_VAR_TYPE_TIMEDEP,    //! Variable is stepped by LOCA in time
+    MECH_VAR_TYPE_INTERP_FROM_FILE //! Variable is interpolated through time
   };
 
   // Source function type

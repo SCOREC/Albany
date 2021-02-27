@@ -69,7 +69,8 @@ private:
     SQRT_TEMP,
     INV_SQRT_TEMP,
     NEUTRON_DIFFUSION,
-    TIME_DEP_SCALAR
+    TIME_DEP_SCALAR,
+    INTERP_FROM_FILE
   };
   MAT_PROP_TYPE matPropType;
 
@@ -91,6 +92,18 @@ private:
   // Time Dependent value
   std::vector< RealType > timeValues;
   std::vector< RealType > depValues;
+
+  // Interpolation from file
+  //  Format is columns of [t, value1, value2,...]
+  std::string file_name;
+  int         num_cols;
+  int         num_data_cols;
+  std::vector<double>              time_data;
+  std::vector<std::vector<double>> array_data;
+
+  // Parameter List
+  Teuchos::ParameterList p;
+
 
 };
 }

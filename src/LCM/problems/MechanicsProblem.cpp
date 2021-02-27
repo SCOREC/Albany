@@ -66,18 +66,18 @@ MechanicsProblem::MechanicsProblem(
       have_mech_eq_);
 
   getVariableType(
-      params->sublist("Temperature"),
-      "None",
-      temperature_type_,
-      have_temperature_,
-      have_temperature_eq_);
-
-  getVariableType(
       params->sublist("ACE Temperature"),
       "None",
       temperature_type_,
       have_ace_temperature_,
       have_ace_temperature_eq_);
+
+  getVariableType(
+      params->sublist("Temperature"),
+      "None",
+      temperature_type_,
+      have_temperature_,
+      have_temperature_eq_);
 
   getVariableType(
       params->sublist("DislocationDensity"),
@@ -290,7 +290,8 @@ MechanicsProblem::MechanicsProblem(
     requirements.push_back("Lattice_Orientation");
   }
   if (have_erosion == true) { requirements.push_back("boundary_indicator"); }
-}  // MechanicsProblem
+  // MechanicsProblem
+}
 
 //------------------------------------------------------------------------------
 
@@ -608,6 +609,8 @@ MechanicsProblem::getVariableType(
     variable_type = MECH_VAR_TYPE_DOF;
   } else if (type == "Time Dependent") {
     variable_type = MECH_VAR_TYPE_TIMEDEP;
+  } else if (type == "Interpolate From File") {
+    variable_type = MECH_VAR_TYPE_INTERP_FROM_FILE;
   } else {
     TEUCHOS_TEST_FOR_EXCEPTION(
         true, std::logic_error, "Unknown variable type " << type << '\n');
@@ -629,6 +632,8 @@ MechanicsProblem::variableTypeToString(
     return "Constant";
   } else if (variable_type == MECH_VAR_TYPE_TIMEDEP) {
     return "Time Dependent";
+  } else if (variable_type == MECH_VAR_TYPE_INTERP_FROM_FILE) {
+    return "Interpolate From File";
   }
 
   return "DOF";
