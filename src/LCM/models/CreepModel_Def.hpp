@@ -319,7 +319,7 @@ CreepModel<EvalT, Traits>::computeState(
 
       auto smag_cr = minitensor::norm(s);
       f = smag_cr - sq23 * (Y + K * eqpsold(cell, pt));
-      if (f <= 0.0)  // Material is yielding...
+      if (f > 0.0)  // Material is yielding...
       {
         auto xi = 2.0 * mubar * dt * temp_adj_relaxation_para_ * strain_rate_expo_
                   * std::pow( smag_cr, strain_rate_expo_-1.0);
