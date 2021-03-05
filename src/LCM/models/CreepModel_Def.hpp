@@ -250,13 +250,8 @@ CreepModel<EvalT, Traits>::computeState(
           int       count         = 0;
           // ScalarT H = 0.0;
           dgam = 0.0;
-          ScalarT debug_X[max_count + 1];
-          ScalarT debug_F[max_count + 1];
-          ScalarT debug_dFdX[max_count + 1];
-          ScalarT debug_res[max_count + 1];
 
           LocalNonlinearSolver<EvalT, Traits> solver;
-
           std::vector<ScalarT> F(1);
           std::vector<ScalarT> dFdX(1);
           std::vector<ScalarT> X(1);
@@ -278,24 +273,6 @@ CreepModel<EvalT, Traits>::computeState(
                       (a0 - 2. / 3. * X[0] * a1) * (a0 - 2. / 3. * X[0] * a1),
                       strain_rate_expo_ / 2. - 1.) *
                   (8. / 9. * X[0] * a1 * a1 - 4. / 3. * a0 * a1);
-
-          if ((typeid(ScalarT) == typeid(double)) && (F[0] != F[0])) {
-            std::cerr << "F[0] is NaN, here are some contributing values:n";
-            std::cerr << "Fpinv is " << Fpinv << 'n';
-            std::cerr << "Cpinv is " << Fpinv << 'n';
-            std::cerr << "a0 is " << a0 << 'n';
-            std::cerr << "a1 is " << a1 << 'n';
-            std::cerr << "mu is " << mu << 'n';
-            std::cerr << "strain_rate_expo_ is " << strain_rate_expo_ << 'n';
-            std::cerr << "temp_adj_relaxation_para_ is "
-                      << temp_adj_relaxation_para_ << 'n';
-            std::cerr << "dt is " << dt << 'n';
-          }
-
-          debug_X[0]    = X[0];
-          debug_F[0]    = F[0];
-          debug_dFdX[0] = dFdX[0];
-          debug_res[0]  = 0.0;
           original_res  = F[0];
 
           while (!converged && count <= max_count) {
@@ -318,73 +295,29 @@ CreepModel<EvalT, Traits>::computeState(
                         strain_rate_expo_ / 2. - 1.) *
                     (8. / 9. * X[0] * a1 * a1 - 4. / 3. * a0 * a1);
 
-            if (debug_output_counter % DEBUG_FREQ == 0)
-              std::cout << "Creep Solver count = " << count << std::endl;
-            if (debug_output_counter % DEBUG_FREQ == 0)
-              std::cout << "X[0] = " << X[0] << std::endl;
-            if (debug_output_counter % DEBUG_FREQ == 0)
-              std::cout << "F[0] = " << F[0] << std::endl;
-            if (debug_output_counter % DEBUG_FREQ == 0)
-              std::cout << "dFdX[0] = " << dFdX[0] << std::endl;
-
-            debug_X[count]    = X[0];
-            debug_F[count]    = F[0];
-            debug_dFdX[count] = dFdX[0];
-
-            res              = std::abs(F[0]);
-            debug_res[count] = res;
-            res_norm         = res/original_res;
+            res      = std::abs(F[0]);
+            res_norm = res/original_res;
 
             if (res_norm < return_map_tolerance || res < return_map_tolerance) 
             { 
               converged = true; 
             }
-
-            if (count == max_count) {
-              std::cerr << "detected NaN, here are the X, F, dfdX values at "
-                           "each iteration:\n";
-              for (int i = 0; i < max_count; ++i) {
-                std::cout << "i = " << i << std::endl;
-                std::cout << "debug_X =" << debug_X[i] << std::endl;
-                std::cout << "debug_F =" << debug_F[i] << std::endl;
-                std::cout << "debug_dFdX =" << debug_dFdX[i] << std::endl;
-                std::cout << "debug_res =" << debug_res[i] << std::endl;
-              }
-            }
-
-            TEUCHOS_TEST_FOR_EXCEPTION(
-                count == max_count,
-                std::runtime_error,
-                std::endl
-                    << "Error in return mapping, count = " << count
-                    << "\nres = " << res << "\ng = " << F[0] << "\ndg = "
-                    << dFdX[0] << "\nalpha = " << alpha << std::endl);
           }
+          TEUCHOS_TEST_FOR_EXCEPTION(
+              count == max_count,
+              std::runtime_error,
+              std::endl
+                  << "Error in return mapping, count = " << count
+                  << "\nres = " << res << "\ng = " << F[0] << "\ndg = "
+                  << dFdX[0] << "\nalpha = " << alpha << std::endl);
           solver.computeFadInfo(dFdX, X, F);
-
           dgam = X[0];
-  
 
           // plastic direction
           N = s / minitensor::norm(s);
 
           // update s
           s -= 2.0 * mubar * dgam * N;
-
-//          std::cout << "|| s || = " << minitensor::norm(s) << std::endl;
-
-          // mechanical source
-          /* The below source heat calculation is not correct.
-           *  It is not correct because the yield strength (Y)
-           *  is being added to the temperature (temperature_)
-           *  which is dimensionally wrong.
-           *
-           *  if (have_temperature_ && dt > 0)
-           *  {
-           *  source(cell, pt) = 0.0 * (sq23 * dgam / dt
-           *    * (Y + temperature_(cell,pt))) / (density_ * heat_capacity_);
-           *  }
-           */
 
           // exponential map to get Fpnew
           A              = dgam * N;
@@ -399,8 +332,6 @@ CreepModel<EvalT, Traits>::computeState(
         }  
         else 
         {
-//          std::cout << "a0 = " << a0 << " <= 1E-12. Skipped return mapping algorithm." 
-//            << std::endl;
           eqps(cell, pt) = eqpsold(cell, pt);
           for (int i(0); i < num_dims_; ++i) 
           {
@@ -413,9 +344,6 @@ CreepModel<EvalT, Traits>::computeState(
       } 
       else // Material is yielding...
       {
-//        std::cout
-//          << "=== Material is yielding..." << std::endl;
-
         bool    converged    = false;
         ScalarT H            = 0.0;
         ScalarT dH           = 0.0;
