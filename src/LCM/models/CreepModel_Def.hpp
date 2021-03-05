@@ -4,7 +4,6 @@
 //    in the file "license.txt" in the top-level Albany directory  //
 //*****************************************************************//
 
-#define DEBUG_FREQ 100000000000
 #include <MiniTensor.h>
 #include "LocalNonlinearSolver.hpp"
 #include "Phalanx_DataLayout.hpp"
@@ -173,11 +172,8 @@ CreepModel<EvalT, Traits>::computeState(
   minitensor::Tensor<ScalarT> Fpn(num_dims_), Fpinv(num_dims_),
       Cpinv(num_dims_);
 
-  long int debug_output_counter = 0;
-
   for (int cell(0); cell < workset.numCells; ++cell) {
     for (int pt(0); pt < num_pts_; ++pt) {
-      debug_output_counter++;
       kappa = elastic_modulus(cell, pt) /
               (3. * (1. - 2. * poissons_ratio(cell, pt)));
       mu   = elastic_modulus(cell, pt) / (2. * (1. + poissons_ratio(cell, pt)));
@@ -186,7 +182,6 @@ CreepModel<EvalT, Traits>::computeState(
       Jm23 = std::pow(J(cell, pt), -2. / 3.);
 
       // ----------------------------  temperature dependent coefficient
-      // ------------------------
 
       // the effective 'B' we had before in the previous models, with mu
       if (have_temperature_) {
@@ -197,9 +192,6 @@ CreepModel<EvalT, Traits>::computeState(
         temp_adj_relaxation_para_ =
             relaxation_para_ * std::exp(-activation_para_ / 303.0);
       }
-
-      if (debug_output_counter % DEBUG_FREQ == 0)
-        std::cout << "B = " << temp_adj_relaxation_para_ << std::endl;
 
       // fill local tensors
       F.fill(def_grad, cell, pt, 0, 0);
@@ -215,54 +207,60 @@ CreepModel<EvalT, Traits>::computeState(
       Cpinv = Fpinv * minitensor::transpose(Fpinv);
       be    = Jm23 * F * Cpinv * minitensor::transpose(F);
 
-      a0 = minitensor::norm(minitensor::dev(be));
-      a1 = minitensor::trace(be);
 
       s = mu * minitensor::dev(be);
-
       mubar = minitensor::trace(be) * mu / (num_dims_);
 
-      smag = minitensor::norm(s);
-
-      f = smag - sq23 * (Y + K * eqpsold(cell, pt));
-
-//        std::cout
-//          << std::endl
-//          << std::endl
-//          << "=== At new quadrature point..." << std::endl
-//          << "=== smag = " << smag << std::endl
-//          << "=== Y    = " << Y << std::endl
-//          << "=== f    = " << f << std::endl;
-        
-
-      int const max_count = max_return_map_count;
-      // check yield condition
-      if (f <= 0.0) 
+      // check if creep is large enough to calculate
+      a0 = minitensor::norm(minitensor::dev(be));
+      if (a0 > 1.0E-12) 
       {
-        if (a0 > 1.0E-12) 
+        // return mapping algorithm for creep only
+        bool      converged     = false;
+        ScalarT   res           = 0.0;
+        ScalarT   res_norm      = 1.0;
+        ScalarT   original_res  = 1.0;
+        int       count         = 0;
+        int const max_count     = max_return_map_count;
+        dgam = 0.0;
+
+        LocalNonlinearSolver<EvalT, Traits> solver;
+        std::vector<ScalarT> F(1);
+        std::vector<ScalarT> dFdX(1);
+        std::vector<ScalarT> X(1);
+
+        a1 = minitensor::trace(be);
+
+        X[0] = creep_initial_guess_;
+
+        F[0] = X[0] - dt * temp_adj_relaxation_para_ *
+                          std::pow(mu, strain_rate_expo_) *
+                          std::pow(
+                              (a0 - 2. / 3. * X[0] * a1) *
+                              (a0 - 2. / 3. * X[0] * a1),
+                              strain_rate_expo_ / 2.);
+
+        dFdX[0] =
+            1. -
+            dt * temp_adj_relaxation_para_ *
+                std::pow(mu, strain_rate_expo_) * (strain_rate_expo_ / 2.) *
+                std::pow(
+                    (a0 - 2. / 3. * X[0] * a1) * 
+                    (a0 - 2. / 3. * X[0] * a1),
+                    strain_rate_expo_ / 2. - 1.) *
+                (8. / 9. * X[0] * a1 * a1 - 4. / 3. * a0 * a1);
+        original_res  = F[0];
+
+        while (!converged)
         {
-          // return mapping algorithm
-          bool      converged     = false;
-          ScalarT   alpha         = 0.0;
-          ScalarT   res           = 0.0;
-          ScalarT   res_norm      = 1.0;
-          ScalarT   original_res  = 1.0;
-          int       count         = 0;
-          // ScalarT H = 0.0;
-          dgam = 0.0;
-
-          LocalNonlinearSolver<EvalT, Traits> solver;
-          std::vector<ScalarT> F(1);
-          std::vector<ScalarT> dFdX(1);
-          std::vector<ScalarT> X(1);
-
-          X[0] = creep_initial_guess_;
+          count++;
+          solver.solve(dFdX, X, F);
 
           F[0] = X[0] - dt * temp_adj_relaxation_para_ *
                             std::pow(mu, strain_rate_expo_) *
                             std::pow(
                                 (a0 - 2. / 3. * X[0] * a1) *
-                                    (a0 - 2. / 3. * X[0] * a1),
+                                (a0 - 2. / 3. * X[0] * a1),
                                 strain_rate_expo_ / 2.);
 
           dFdX[0] =
@@ -273,146 +271,67 @@ CreepModel<EvalT, Traits>::computeState(
                       (a0 - 2. / 3. * X[0] * a1) * (a0 - 2. / 3. * X[0] * a1),
                       strain_rate_expo_ / 2. - 1.) *
                   (8. / 9. * X[0] * a1 * a1 - 4. / 3. * a0 * a1);
-          original_res  = F[0];
 
-          while (!converged && count <= max_count) {
-            count++;
-            solver.solve(dFdX, X, F);
+          res      = std::abs(F[0]);
+          res_norm = res/original_res;
 
-            F[0] = X[0] - dt * temp_adj_relaxation_para_ *
-                              std::pow(mu, strain_rate_expo_) *
-                              std::pow(
-                                  (a0 - 2. / 3. * X[0] * a1) *
-                                      (a0 - 2. / 3. * X[0] * a1),
-                                  strain_rate_expo_ / 2.);
-
-            dFdX[0] =
-                1. -
-                dt * temp_adj_relaxation_para_ *
-                    std::pow(mu, strain_rate_expo_) * (strain_rate_expo_ / 2.) *
-                    std::pow(
-                        (a0 - 2. / 3. * X[0] * a1) * (a0 - 2. / 3. * X[0] * a1),
-                        strain_rate_expo_ / 2. - 1.) *
-                    (8. / 9. * X[0] * a1 * a1 - 4. / 3. * a0 * a1);
-
-            res      = std::abs(F[0]);
-            res_norm = res/original_res;
-
-            if (res_norm < return_map_tolerance || res < return_map_tolerance) 
-            { 
-              converged = true; 
-            }
+          if (res_norm < return_map_tolerance || res < return_map_tolerance) 
+          { 
+            converged = true; 
           }
           TEUCHOS_TEST_FOR_EXCEPTION(
               count == max_count,
               std::runtime_error,
               std::endl
-                  << "Error in return mapping, count = " << count
-                  << "\nres = " << res << "\ng = " << F[0] << "\ndg = "
-                  << dFdX[0] << "\nalpha = " << alpha << std::endl);
-          solver.computeFadInfo(dFdX, X, F);
-          dgam = X[0];
+                  << "Error in return mapping (creep only), count = " << count
+                  << "\nres = " << res << "\nF[0] = " << F[0] << "\ndFdX[0] = "
+                  << dFdX[0] << std::endl);
+        }
+        solver.computeFadInfo(dFdX, X, F);
+        dgam = X[0];
 
-          // plastic direction
-          N = s / minitensor::norm(s);
+        // plastic direction
+        N = s / minitensor::norm(s);
 
-          // update s
-          s -= 2.0 * mubar * dgam * N;
+        // update s to include creep correction
+        s -= 2.0 * mubar * dgam * N;
 
-          // exponential map to get Fpnew
-          A              = dgam * N;
-          eqps(cell, pt) = eqpsold(cell, pt);
-          expA           = minitensor::exp(A);
-          Fpnew          = expA * Fpn;
-          for (int i(0); i < num_dims_; ++i) {
-            for (int j(0); j < num_dims_; ++j) {
-              Fp(cell, pt, i, j) = Fpnew(i, j);
-            }
-          }
-        }  
-        else 
-        {
-          eqps(cell, pt) = eqpsold(cell, pt);
-          for (int i(0); i < num_dims_; ++i) 
-          {
-            for (int j(0); j < num_dims_; ++j) 
-            {
-              Fp(cell, pt, i, j) = Fpn(i, j);
-            }
+        // exponential map to get Fpnew
+        A              = dgam * N;
+        eqps(cell, pt) = eqpsold(cell, pt);
+        expA           = minitensor::exp(A);
+        Fpnew          = expA * Fpn;
+        for (int i(0); i < num_dims_; ++i) {
+          for (int j(0); j < num_dims_; ++j) {
+            Fp(cell, pt, i, j) = Fpnew(i, j);
           }
         }
-      } 
-      else // Material is yielding...
+      }  
+      else  // Linear estimate was fine, no creep
       {
-        bool    converged    = false;
-        ScalarT H            = 0.0;
-        ScalarT dH           = 0.0;
-        ScalarT alpha        = 0.0;
-        ScalarT res          = 0.0;
-        ScalarT original_res = 0.0;
-        ScalarT res_norm     = 0.0;
-        int     count        = 0;
+        eqps(cell, pt) = eqpsold(cell, pt);
+        for (int i(0); i < num_dims_; ++i) {
+          for (int j(0); j < num_dims_; ++j) {
+            Fp(cell, pt, i, j) = Fpn(i, j);
+          }
+        }
+      }
 
-        // smag_new     = 0.0;
+      auto smag_cr = minitensor::norm(s);
+      auto s_cr    = s;
+      f = smag_cr - sq23 * (Y + K * eqpsold(cell, pt));
+      if (f <= 0.0)  // Material is yielding...
+      {
         dgam         = 0.0;
         dgam_plastic = 0.0;
 
-        LocalNonlinearSolver<EvalT, Traits> solver;
-
-        std::vector<ScalarT> F(1);
-        std::vector<ScalarT> dFdX(1);
-        std::vector<ScalarT> X(1);
-
-        F[0]    = f;
-        X[0]    = 0.0;
-        dFdX[0] = (-2. * mubar) * (1. + H / (3. * mubar));
-
-        original_res = F[0];
-
-        while (!converged)  
-        {
-          count++;
-          solver.solve(dFdX, X, F);
-          H = 2. * mubar * dt * temp_adj_relaxation_para_ *
-              std::pow(
-                  (smag + 2. / 3. * (K * X[0]) - f) *
-                      (smag + 2. / 3. * (K * X[0]) - f),
-                  strain_rate_expo_ / 2.);
-          dH = strain_rate_expo_ * 2. * mubar * dt *
-               temp_adj_relaxation_para_ * (2. * K) / 3. *
-               std::pow(
-                   (smag + 2. / 3. * (K * X[0]) - f) *
-                       (smag + 2. / 3. * (K * X[0]) - f),
-                   (strain_rate_expo_ - 1.) / 2.);
-          F[0]    = f - 2. * mubar * (1. + K / (3. * mubar)) * X[0] - H;
-          dFdX[0] = -2. * mubar * (1. + K / (3. * mubar)) - dH;
-
-          res      = std::abs(F[0]);
-          res_norm = res/original_res;
-          if (res < return_map_tolerance || res_norm < return_map_tolerance)
-          {
-             converged = true;
-          }
-
-          TEUCHOS_TEST_FOR_EXCEPTION(
-              count > max_count,
-              std::runtime_error,
-              std::endl
-                  << "Error in return mapping, count = " << count
-                  << "\nres = " << res 
-                  << "\nres_norm = " << res_norm
-                  << "\ng = " << F[0] 
-                  << "\ndg = " << dFdX[0] << std::endl);
-        }
-        solver.computeFadInfo(dFdX, X, F);
-
-        dgam_plastic = X[0];
+        //TODO: cacluate dgam here
+        dgam_plastic = 0.0;
 
         // plastic direction
         N = s / minitensor::norm(s);
 
         // update s
-
         s -= 2.0 * mubar * dgam_plastic * N + f * N -
              2. * mubar * (1. + K / (3. * mubar)) * dgam_plastic * N;
 
@@ -420,27 +339,11 @@ CreepModel<EvalT, Traits>::computeState(
             dgam_plastic + dt * temp_adj_relaxation_para_ *
                                std::pow(minitensor::norm(s), strain_rate_expo_);
 
-        alpha = eqpsold(cell, pt) + sq23 * dgam_plastic;
-
         // plastic direction
         N = s / minitensor::norm(s);
 
         // update eqps
-        eqps(cell, pt) = alpha;
-
-        // mechanical source
-        /* The below source heat calculation is not correct.
-         *  It is not correct because the yield strength (Y)
-         *  is being added to the temperature (temperature_)
-         *  which is dimensionally wrong.
-         *
-         * if (have_temperature_ && dt > 0) {
-         *   source(cell, pt) =
-         *       0.0 *
-         *       (sq23 * dgam / dt * (Y + H + temperature_(cell, pt))) /
-         *       (density_ * heat_capacity_);
-         * }
-         */
+        eqps(cell, pt) = eqpsold(cell, pt) + sq23 * dgam_plastic;
 
         // exponential map to get Fpnew
         A     = dgam * N;
@@ -457,13 +360,15 @@ CreepModel<EvalT, Traits>::computeState(
 
       // compute stress
       sigma = p * I + s / J(cell, pt);
-      for (int i(0); i < num_dims_; ++i) {
-        for (int j(0); j < num_dims_; ++j) {
+      for (int i(0); i < num_dims_; ++i) 
+      {
+        for (int j(0); j < num_dims_; ++j) 
+        {
           stress(cell, pt, i, j) = sigma(i, j);
         }
       }
-    }
-  }
+    } //For each qp 
+  } // For each cell
 
   if (have_temperature_) {
     for (int cell(0); cell < workset.numCells; ++cell) {
