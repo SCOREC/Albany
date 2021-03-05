@@ -318,15 +318,17 @@ CreepModel<EvalT, Traits>::computeState(
       }
 
       auto smag_cr = minitensor::norm(s);
-      auto s_cr    = s;
       f = smag_cr - sq23 * (Y + K * eqpsold(cell, pt));
       if (f <= 0.0)  // Material is yielding...
       {
-        dgam         = 0.0;
-        dgam_plastic = 0.0;
+        auto xi = 2.0 * mubar * dt * temp_adj_relaxation_para_ * strain_rate_expo_
+                  * std::pow( smag_cr, strain_rate_expo_-1.0);
+        auto xi_1 = xi + 1.0;
 
-        //TODO: cacluate dgam here
-        dgam_plastic = 0.0;
+        auto top = f * xi_1;
+        auto bot = 2.0 * (mubar + K * xi_1/3.0);
+
+        dgam_plastic = top/bot;
 
         // plastic direction
         N = s / minitensor::norm(s);
