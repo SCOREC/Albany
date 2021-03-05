@@ -226,15 +226,13 @@ CreepModel<EvalT, Traits>::computeState(
 
       f = smag - sq23 * (Y + K * eqpsold(cell, pt));
 
-//      if( Albany::getProcRank() == 0)
-//      {
 //        std::cout
 //          << std::endl
 //          << std::endl
-//          << "At new quadrature point..." << std::endl
-//          << "|| dev( b_e) || = " << a0 << std::endl
-//          << "|| s || = " << smag << std::endl;
-//      }
+//          << "=== At new quadrature point..." << std::endl
+//          << "=== smag = " << smag << std::endl
+//          << "=== Y    = " << Y << std::endl
+//          << "=== f    = " << f << std::endl;
         
 
       int const max_count = max_return_map_count;
@@ -415,6 +413,9 @@ CreepModel<EvalT, Traits>::computeState(
       } 
       else // Material is yielding...
       {
+//        std::cout
+//          << "=== Material is yielding..." << std::endl;
+
         bool    converged    = false;
         ScalarT H            = 0.0;
         ScalarT dH           = 0.0;
