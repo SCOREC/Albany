@@ -215,86 +215,34 @@ CreepModel<EvalT, Traits>::computeState(
       a0 = minitensor::norm(minitensor::dev(be));
       if (a0 > 1.0E-12) 
       {
-        // return mapping algorithm for creep only
-        bool      converged     = false;
-        ScalarT   res           = 0.0;
-        ScalarT   res_norm      = 1.0;
-        ScalarT   original_res  = 1.0;
-        int       count         = 0;
-        int const max_count     = max_return_map_count;
-        dgam = 0.0;
+        ScalarT smag = minitensor::norm(s);
+        ScalarT d = 2.0 * mubar * dt * temp_adj_relaxation_para_ * std::pow( smag, strain_rate_expo_-1.0);
 
-        LocalNonlinearSolver<EvalT, Traits> solver;
-        std::vector<ScalarT> F(1);
-        std::vector<ScalarT> dFdX(1);
-        std::vector<ScalarT> X(1);
+        ScalarT eta = d / (1 + strain_rate_expo_*d);
 
-        a1 = minitensor::trace(be);
-
-        X[0] = creep_initial_guess_;
-
-        F[0] = X[0] - dt * temp_adj_relaxation_para_ *
-                          std::pow(mu, strain_rate_expo_) *
-                          std::pow(
-                              (a0 - 2. / 3. * X[0] * a1) *
-                              (a0 - 2. / 3. * X[0] * a1),
-                              strain_rate_expo_ / 2.);
-
-        dFdX[0] =
-            1. -
-            dt * temp_adj_relaxation_para_ *
-                std::pow(mu, strain_rate_expo_) * (strain_rate_expo_ / 2.) *
-                std::pow(
-                    (a0 - 2. / 3. * X[0] * a1) * 
-                    (a0 - 2. / 3. * X[0] * a1),
-                    strain_rate_expo_ / 2. - 1.) *
-                (8. / 9. * X[0] * a1 * a1 - 4. / 3. * a0 * a1);
-        original_res  = F[0];
-
-        while (!converged)
+        if( eta > 0.5)
         {
-          count++;
-          solver.solve(dFdX, X, F);
-
-          F[0] = X[0] - dt * temp_adj_relaxation_para_ *
-                            std::pow(mu, strain_rate_expo_) *
-                            std::pow(
-                                (a0 - 2. / 3. * X[0] * a1) *
-                                (a0 - 2. / 3. * X[0] * a1),
-                                strain_rate_expo_ / 2.);
-
-          dFdX[0] =
-              1. -
-              dt * temp_adj_relaxation_para_ *
-                  std::pow(mu, strain_rate_expo_) * (strain_rate_expo_ / 2.) *
-                  std::pow(
-                      (a0 - 2. / 3. * X[0] * a1) * (a0 - 2. / 3. * X[0] * a1),
-                      strain_rate_expo_ / 2. - 1.) *
-                  (8. / 9. * X[0] * a1 * a1 - 4. / 3. * a0 * a1);
-
-          res      = std::abs(F[0]);
-          res_norm = res/original_res;
-
-          if (res_norm < return_map_tolerance || res < return_map_tolerance) 
-          { 
-            converged = true; 
-          }
-          TEUCHOS_TEST_FOR_EXCEPTION(
-              count == max_count,
-              std::runtime_error,
-              std::endl
-                  << "Error in return mapping (creep only), count = " << count
-                  << "\nres = " << res << "\nF[0] = " << F[0] << "\ndFdX[0] = "
-                  << dFdX[0] << std::endl);
+          std::cout  << "----------------------"
+            << "\tAt cell " << cell << ", qp " << pt << ".\n"
+            << "\teta = " << eta << " > 0.5" << "\n"
+            << "\t\td     = " << d     << "\n"
+            << "\t\tsmag  = " << smag  << "\n"
+            << "\t\tmubar = " << mubar << "\n"
+            << "\t\tdt    = " << dt    << "\n"
+            << "\t\tstrain_rate_expo_         = " << strain_rate_expo_ << "\n"
+            << "\t\ttemp_adj_relaxation_para_ = " << temp_adj_relaxation_para_ << "\n"
+            << std::endl;
         }
-        solver.computeFadInfo(dFdX, X, F);
-        dgam = X[0];
+        // update s to include creep correction
+        ScalarT top = 1.0 + (strain_rate_expo_ - 1.0)*d;
+        ScalarT bot = 1.0 + strain_rate_expo_*d;
+        s = top/bot * s;
+
+        // calculate delta gamma creep with new stress
+        dgam = dt * temp_adj_relaxation_para_ * std::pow( minitensor::norm(s), strain_rate_expo_);
 
         // plastic direction
         N = s / minitensor::norm(s);
-
-        // update s to include creep correction
-        s -= 2.0 * mubar * dgam * N;
 
         // exponential map to get Fpnew
         A              = dgam * N;
