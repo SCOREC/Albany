@@ -160,17 +160,8 @@ CreepModel<EvalT, Traits>::computeState(
   ScalarT kappa, mu, mubar, K, Y;
   // new parameters introduced here for being the temperature dependent, they
   // are the last two listed below
-  ScalarT Jm23 = 0.0;
-  ScalarT p    = 0.0;
-  ScalarT a0   = 0.0;
-  ScalarT a1   = 0.0;
-  ScalarT f    = 0.0;
-  ScalarT smag = 0.0;
-  ScalarT dgam_creep   = 0.0;
-  ScalarT dgam_plastic = 0.0;
-  ScalarT temp_adj_relaxation_para_ = 0.0;
-
-
+  ScalarT Jm23, p, dgam, dgam_plastic, a0, a1, f, smag,
+      temp_adj_relaxation_para_;
   ScalarT sq23(std::sqrt(2. / 3.));
 
   minitensor::Tensor<ScalarT> F(num_dims_), be(num_dims_), s(num_dims_),
@@ -181,15 +172,8 @@ CreepModel<EvalT, Traits>::computeState(
   minitensor::Tensor<ScalarT> Fpn(num_dims_), Fpinv(num_dims_),
       Cpinv(num_dims_);
 
-  std::cout << "In CreepModel_Def, computestate..." << "\n"
-            << "  Evaluating for each qp in each cell..." << "\n"
-            << std::endl;
-
-
-  for (int cell(0); cell < workset.numCells; ++cell) 
-  {
-    for (int pt(0); pt < num_pts_; ++pt) 
-    {
+  for (int cell(0); cell < workset.numCells; ++cell) {
+    for (int pt(0); pt < num_pts_; ++pt) {
       kappa = elastic_modulus(cell, pt) /
               (3. * (1. - 2. * poissons_ratio(cell, pt)));
       mu   = elastic_modulus(cell, pt) / (2. * (1. + poissons_ratio(cell, pt)));
@@ -227,7 +211,7 @@ CreepModel<EvalT, Traits>::computeState(
       s = mu * minitensor::dev(be);
       mubar = minitensor::trace(be) * mu / (num_dims_);
 
-      // check if creep is large enough to calculate correction
+      // check if creep is large enough to calculate
       a0 = minitensor::norm(minitensor::dev(be));
       if (a0 > 1.0E-12) 
       {
@@ -238,6 +222,7 @@ CreepModel<EvalT, Traits>::computeState(
         ScalarT   original_res  = 1.0;
         int       count         = 0;
         int const max_count     = max_return_map_count;
+        dgam = 0.0;
 
         LocalNonlinearSolver<EvalT, Traits> solver;
         std::vector<ScalarT> F(1);
@@ -303,13 +288,24 @@ CreepModel<EvalT, Traits>::computeState(
                   << dFdX[0] << std::endl);
         }
         solver.computeFadInfo(dFdX, X, F);
-        dgam_creep = X[0];
+        dgam = X[0];
 
         // plastic direction
         N = s / minitensor::norm(s);
 
         // update s to include creep correction
-        s -= 2.0 * mubar * dgam_creep * N;
+        s -= 2.0 * mubar * dgam * N;
+
+        // exponential map to get Fpnew
+        A              = dgam * N;
+        eqps(cell, pt) = eqpsold(cell, pt);
+        expA           = minitensor::exp(A);
+        Fpnew          = expA * Fpn;
+        for (int i(0); i < num_dims_; ++i) {
+          for (int j(0); j < num_dims_; ++j) {
+            Fp(cell, pt, i, j) = Fpnew(i, j);
+          }
+        }
       }  
       else  // Linear estimate was fine, no creep
       {
@@ -325,12 +321,12 @@ CreepModel<EvalT, Traits>::computeState(
       f = smag_cr - sq23 * (Y + K * eqpsold(cell, pt));
       if (f > 0.0)  // Material is yielding...
       {
-        ScalarT xi = 2.0 * mubar * dt * temp_adj_relaxation_para_ * strain_rate_expo_
+        auto xi = 2.0 * mubar * dt * temp_adj_relaxation_para_ * strain_rate_expo_
                   * std::pow( smag_cr, strain_rate_expo_-1.0);
-        ScalarT xi_1 = xi + 1.0;
+        auto xi_1 = xi + 1.0;
 
-        ScalarT top = f * xi_1;
-        ScalarT bot = 2.0 * (mubar + K * xi_1/3.0);
+        auto top = f * xi_1;
+        auto bot = 2.0 * (mubar + K * xi_1/3.0);
 
         dgam_plastic = top/bot;
 
@@ -341,17 +337,24 @@ CreepModel<EvalT, Traits>::computeState(
         s -= 2.0 * mubar * dgam_plastic * N + f * N -
              2. * mubar * (1. + K / (3. * mubar)) * dgam_plastic * N;
 
+        dgam =
+            dgam_plastic + dt * temp_adj_relaxation_para_ *
+                               std::pow(minitensor::norm(s), strain_rate_expo_);
+
+        // plastic direction
+        N = s / minitensor::norm(s);
+
         // update eqps
         eqps(cell, pt) = eqpsold(cell, pt) + sq23 * dgam_plastic;
-      }
 
-      // exponential map to get Fpnew
-      A     = (dgam_plastic+dgam_creep) * N;
-      expA  = minitensor::exp(A);
-      Fpnew = expA * Fpn;
-      for (int i(0); i < num_dims_; ++i) {
-        for (int j(0); j < num_dims_; ++j) {
-          Fp(cell, pt, i, j) = Fpnew(i, j);
+        // exponential map to get Fpnew
+        A     = dgam * N;
+        expA  = minitensor::exp(A);
+        Fpnew = expA * Fpn;
+        for (int i(0); i < num_dims_; ++i) {
+          for (int j(0); j < num_dims_; ++j) {
+            Fp(cell, pt, i, j) = Fpnew(i, j);
+          }
         }
       }
 
