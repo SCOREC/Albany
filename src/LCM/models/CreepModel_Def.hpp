@@ -164,13 +164,18 @@ CreepModel<EvalT, Traits>::computeState(
       temp_adj_relaxation_para_;
   ScalarT sq23(std::sqrt(2. / 3.));
 
-  minitensor::Tensor<ScalarT> F(num_dims_), be(num_dims_), s(num_dims_),
-      sigma(num_dims_);
-  minitensor::Tensor<ScalarT> N(num_dims_), A(num_dims_), expA(num_dims_),
-      Fpnew(num_dims_);
+  minitensor::Tensor<ScalarT> F(num_dims_), 
+                              be(num_dims_), 
+                              s(num_dims_),
+                              sigma(num_dims_),
+                              N(num_dims_), 
+                              A(num_dims_), 
+                              expA(num_dims_),
+                              Fpnew(num_dims_),
+                              Fpn(num_dims_), 
+                              Fpinv(num_dims_),
+                              Cpinv(num_dims_);
   minitensor::Tensor<ScalarT> I(minitensor::eye<ScalarT>(num_dims_));
-  minitensor::Tensor<ScalarT> Fpn(num_dims_), Fpinv(num_dims_),
-      Cpinv(num_dims_);
 
   for (int cell(0); cell < workset.numCells; ++cell) {
     for (int pt(0); pt < num_pts_; ++pt) {
@@ -220,29 +225,29 @@ CreepModel<EvalT, Traits>::computeState(
 
         ScalarT eta = d / (1 + strain_rate_expo_*d);
 
-        if( eta > 0.5)
-        {
-          std::cout  << "----------------------"
-            << "\tAt cell " << cell << ", qp " << pt << ".\n"
-            << "\teta = " << eta << " > 0.5" << "\n"
-            << "\t\td     = " << d     << "\n"
-            << "\t\tsmag  = " << smag  << "\n"
-            << "\t\tmubar = " << mubar << "\n"
-            << "\t\tdt    = " << dt    << "\n"
-            << "\t\tstrain_rate_expo_         = " << strain_rate_expo_ << "\n"
-            << "\t\ttemp_adj_relaxation_para_ = " << temp_adj_relaxation_para_ << "\n"
-            << std::endl;
-        }
+        std::cout  << "----------------------"
+          << "\tAt cell " << cell << ", qp " << pt << ".\n"
+          << "\tCorrecting for creep...\n"
+          << "\teta     = " << eta   << "\n"
+          << "\t\td     = " << d     << "\n"
+          << "\t\tsmag  = " << smag  << "\n"
+          << "\t\tmubar = " << mubar << "\n"
+          << "\t\tdt    = " << dt    << "\n"
+          << "\t\tstrain_rate_expo_         = " << strain_rate_expo_ << "\n"
+          << "\t\ttemp_adj_relaxation_para_ = " << temp_adj_relaxation_para_ << "\n"
         // update s to include creep correction
         ScalarT top = 1.0 + (strain_rate_expo_ - 1.0)*d;
         ScalarT bot = 1.0 + strain_rate_expo_*d;
-        s = top/bot * s;
+        smag = top/bot * smag;
 
         // calculate delta gamma creep with new stress
-        dgam = dt * temp_adj_relaxation_para_ * std::pow( minitensor::norm(s), strain_rate_expo_);
+        dgam = dt * temp_adj_relaxation_para_ * std::pow( smag, strain_rate_expo_);
 
         // plastic direction
         N = s / minitensor::norm(s);
+
+        // Correct for the amount of stress reduced through creep
+        s = s - 2.0 * mubar * dgam * N;
 
         // exponential map to get Fpnew
         A              = dgam * N;
