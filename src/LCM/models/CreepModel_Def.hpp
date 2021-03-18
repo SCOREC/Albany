@@ -223,25 +223,35 @@ CreepModel<EvalT, Traits>::computeState(
         ScalarT smag = minitensor::norm(s);
         ScalarT d = 2.0 * mubar * dt * temp_adj_relaxation_para_ * std::pow( smag, strain_rate_expo_-1.0);
 
-        ScalarT eta = d / (1 + strain_rate_expo_*d);
+        ScalarT eta = d / (1.0 + strain_rate_expo_*d);
 
-        std::cout  << "----------------------"
-          << "\tAt cell " << cell << ", qp " << pt << ".\n"
-          << "\tCorrecting for creep...\n"
-          << "\teta     = " << eta   << "\n"
-          << "\t\td     = " << d     << "\n"
-          << "\t\tsmag  = " << smag  << "\n"
-          << "\t\tmubar = " << mubar << "\n"
-          << "\t\tdt    = " << dt    << "\n"
-          << "\t\tstrain_rate_expo_         = " << strain_rate_expo_ << "\n"
-          << "\t\ttemp_adj_relaxation_para_ = " << temp_adj_relaxation_para_ << "\n"
         // update s to include creep correction
         ScalarT top = 1.0 + (strain_rate_expo_ - 1.0)*d;
         ScalarT bot = 1.0 + strain_rate_expo_*d;
-        smag = top/bot * smag;
+        ScalarT smag_old = smag;
+        smag = top/bot * smag_old;
+
+        if ( eta > 0.5)
+        {
+          std::cout  << "----------------------" 
+            << std::scientific
+            << "\tAt cell " << cell << ", qp " << pt << ".\n"
+            << "\tCorrecting for creep...\n"
+            << "\teta     = " << eta   << "\n"
+            << "\t\td     = " << d     << "\n"
+            << "\t\tsmag  = " << smag  << "\n"
+            << "\t\tsmag_old = " << smag_old  << "\n"
+            << "\t\tmubar = " << mubar << "\n"
+            << "\t\tdt    = " << dt    << "\n"
+            << "\t\ttop   = " << top    << "\n"
+            << "\t\tbot   = " << bot    << "\n"
+            << "\t\tstrain_rate_expo_         = " << strain_rate_expo_ << "\n"
+            << "\t\ttemp_adj_relaxation_para_ = " << temp_adj_relaxation_para_
+            << std::endl;
+        }
 
         // calculate delta gamma creep with new stress
-        dgam = dt * temp_adj_relaxation_para_ * std::pow( smag, strain_rate_expo_);
+        dgam = eta * smag_old / (2.0 * mubar);
 
         // plastic direction
         N = s / minitensor::norm(s);
@@ -249,6 +259,7 @@ CreepModel<EvalT, Traits>::computeState(
         // Correct for the amount of stress reduced through creep
         s = s - 2.0 * mubar * dgam * N;
 
+        
         // exponential map to get Fpnew
         A              = dgam * N;
         eqps(cell, pt) = eqpsold(cell, pt);
@@ -290,10 +301,6 @@ CreepModel<EvalT, Traits>::computeState(
         s -= 2.0 * mubar * dgam_plastic * N + f * N -
              2. * mubar * (1. + K / (3. * mubar)) * dgam_plastic * N;
 
-        dgam =
-            dgam_plastic + dt * temp_adj_relaxation_para_ *
-                               std::pow(minitensor::norm(s), strain_rate_expo_);
-
         // plastic direction
         N = s / minitensor::norm(s);
 
@@ -301,8 +308,9 @@ CreepModel<EvalT, Traits>::computeState(
         eqps(cell, pt) = eqpsold(cell, pt) + sq23 * dgam_plastic;
 
         // exponential map to get Fpnew
-        A     = dgam * N;
-        expA  = minitensor::exp(A);
+        A     = dgam_plastic * N;
+        eqps(cell, pt) = eqpsold(cell, pt);
+        expA           = minitensor::exp(A);
         Fpnew = expA * Fpn;
         for (int i(0); i < num_dims_; ++i) {
           for (int j(0); j < num_dims_; ++j) {
