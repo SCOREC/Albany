@@ -160,7 +160,7 @@ CreepModel<EvalT, Traits>::computeState(
   ScalarT kappa, mu, mubar, K, Y;
   // new parameters introduced here for being the temperature dependent, they
   // are the last two listed below
-  ScalarT Jm23, p, dgam, dgam_plastic, a0, a1, f, smag,
+  ScalarT Jm23, p, dgam_creep, dgam_plastic, a0, a1, f, smag,
       temp_adj_relaxation_para_;
   ScalarT sq23(std::sqrt(2. / 3.));
 
@@ -216,8 +216,12 @@ CreepModel<EvalT, Traits>::computeState(
       s = mu * minitensor::dev(be);
       mubar = minitensor::trace(be) * mu / (num_dims_);
 
+      // plastic direction
+      N = s / minitensor::norm(s);
+
       // check if creep is large enough to calculate
       a0 = minitensor::norm(minitensor::dev(be));
+      dgam_creep = 0.0;
       if (a0 > 1.0E-12) 
       {
         ScalarT smag = minitensor::norm(s);
@@ -231,55 +235,12 @@ CreepModel<EvalT, Traits>::computeState(
         ScalarT smag_old = smag;
         smag = top/bot * smag_old;
 
-        if ( eta > 0.5)
-        {
-          std::cout  << "----------------------" 
-            << std::scientific
-            << "\tAt cell " << cell << ", qp " << pt << ".\n"
-            << "\tCorrecting for creep...\n"
-            << "\teta     = " << eta   << "\n"
-            << "\t\td     = " << d     << "\n"
-            << "\t\tsmag  = " << smag  << "\n"
-            << "\t\tsmag_old = " << smag_old  << "\n"
-            << "\t\tmubar = " << mubar << "\n"
-            << "\t\tdt    = " << dt    << "\n"
-            << "\t\ttop   = " << top    << "\n"
-            << "\t\tbot   = " << bot    << "\n"
-            << "\t\tstrain_rate_expo_         = " << strain_rate_expo_ << "\n"
-            << "\t\ttemp_adj_relaxation_para_ = " << temp_adj_relaxation_para_
-            << std::endl;
-        }
-
         // calculate delta gamma creep with new stress
-        dgam = eta * smag_old / (2.0 * mubar);
-
-        // plastic direction
-        N = s / minitensor::norm(s);
+        dgam_creep = eta * smag_old / (2.0 * mubar);
 
         // Correct for the amount of stress reduced through creep
-        s = s - 2.0 * mubar * dgam * N;
-
-        
-        // exponential map to get Fpnew
-        A              = dgam * N;
-        eqps(cell, pt) = eqpsold(cell, pt);
-        expA           = minitensor::exp(A);
-        Fpnew          = expA * Fpn;
-        for (int i(0); i < num_dims_; ++i) {
-          for (int j(0); j < num_dims_; ++j) {
-            Fp(cell, pt, i, j) = Fpnew(i, j);
-          }
-        }
+        s -= 2.0 * mubar * dgam_creep * N;
       }  
-      else  // Linear estimate was fine, no creep
-      {
-        eqps(cell, pt) = eqpsold(cell, pt);
-        for (int i(0); i < num_dims_; ++i) {
-          for (int j(0); j < num_dims_; ++j) {
-            Fp(cell, pt, i, j) = Fpn(i, j);
-          }
-        }
-      }
 
       ScalarT smag_cr = minitensor::norm(s);
       f = smag_cr - sq23 * (Y + K * eqpsold(cell, pt));
@@ -294,28 +255,26 @@ CreepModel<EvalT, Traits>::computeState(
 
         dgam_plastic = top/bot;
 
-        // plastic direction
-        N = s / minitensor::norm(s);
-
         // update s
         s -= 2.0 * mubar * dgam_plastic * N + f * N -
              2. * mubar * (1. + K / (3. * mubar)) * dgam_plastic * N;
 
-        // plastic direction
-        N = s / minitensor::norm(s);
-
         // update eqps
         eqps(cell, pt) = eqpsold(cell, pt) + sq23 * dgam_plastic;
-
-        // exponential map to get Fpnew
-        A     = dgam_plastic * N;
+      }
+      else // No yielding
+      {
+        dgam_plastic = 0.0;
         eqps(cell, pt) = eqpsold(cell, pt);
-        expA           = minitensor::exp(A);
-        Fpnew = expA * Fpn;
-        for (int i(0); i < num_dims_; ++i) {
-          for (int j(0); j < num_dims_; ++j) {
-            Fp(cell, pt, i, j) = Fpnew(i, j);
-          }
+      }
+
+      // exponential map to get Fpnew
+      A     = (dgam_plastic+dgam_creep) * N;
+      expA           = minitensor::exp(A);
+      Fpnew = expA * Fpn;
+      for (int i(0); i < num_dims_; ++i) {
+        for (int j(0); j < num_dims_; ++j) {
+          Fp(cell, pt, i, j) = Fpnew(i, j);
         }
       }
 
