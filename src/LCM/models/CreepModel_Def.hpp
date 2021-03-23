@@ -160,7 +160,7 @@ CreepModel<EvalT, Traits>::computeState(
   ScalarT kappa, mu, mubar, K, Y;
   // new parameters introduced here for being the temperature dependent, they
   // are the last two listed below
-  ScalarT Jm23, p, dgam_creep, dgam_plastic, a0, a1, f, smag,
+  ScalarT Jm23, p, dgam_creep, dgam_plastic, f, smag,
       temp_adj_relaxation_para_;
   ScalarT sq23(std::sqrt(2. / 3.));
 
@@ -212,7 +212,6 @@ CreepModel<EvalT, Traits>::computeState(
       Cpinv = Fpinv * minitensor::transpose(Fpinv);
       be    = Jm23 * F * Cpinv * minitensor::transpose(F);
 
-
       s = mu * minitensor::dev(be);
       mubar = minitensor::trace(be) * mu / (num_dims_);
 
@@ -220,20 +219,47 @@ CreepModel<EvalT, Traits>::computeState(
       N = s / minitensor::norm(s);
 
       // check if creep is large enough to calculate
-      a0 = minitensor::norm(minitensor::dev(be));
+      ScalarT d = 2.0 * mubar * dt * temp_adj_relaxation_para_ * std::pow( smag, strain_rate_expo_-1.0);
       dgam_creep = 0.0;
-      if (a0 > 1.0E-12) 
+      if (d > 1.0E-12) 
       {
-        ScalarT smag = minitensor::norm(s);
-        ScalarT d = 2.0 * mubar * dt * temp_adj_relaxation_para_ * std::pow( smag, strain_rate_expo_-1.0);
+        smag = minitensor::norm(s);
 
-        ScalarT eta = d / (1.0 + strain_rate_expo_*d);
+        ScalarT eta_old = 1.0e-7;
+        ScalarT eta_new = 0.0;
+
+        ScalarT c_inv = 1.0/strain_rate_expo_;
+
+        bool converged = false;
+        int  count     = 0;
+        while( !converged)
+        {
+          ScalarT d_bar = std::pow( d, c_inv);
+
+          ScalarT f  = std::pow(eta_old, c_inv) + d_bar * (eta_old -1.0);
+          ScalarT df = 1.0/( strain_rate_expo_ * std::pow( eta_old, 1.0-c_inv)) + d_bar;
+
+          eta_new = eta_old - f/df;
+
+          converged = ( std::abs( eta_new - eta_old) < return_map_tolerance);
+
+          TEUCHOS_TEST_FOR_EXCEPTION(
+            count == max_return_map_count,
+            std::runtime_error,
+            "\n" << "Could not converge for creep return map!\n"
+                 << "std::abs(eta_new - eta_old) = "
+                   <<  std::abs(eta_new - eta_old) << "\n"
+                 << "d     = " << d << "\n" 
+                 << "d_bar = " << d_bar << "\n" 
+                 << "f     = " << f << "\n" 
+                 << "df    = " << df << "\n" 
+                 << std::endl);
+        }
+        ScalarT eta = eta_new;
 
         // update s to include creep correction
-        ScalarT top = 1.0 + (strain_rate_expo_ - 1.0)*d;
-        ScalarT bot = 1.0 + strain_rate_expo_*d;
         ScalarT smag_old = smag;
-        smag = top/bot * smag_old;
+        smag = (1.0-eta) * smag_old;
 
         // calculate delta gamma creep with new stress
         dgam_creep = eta * smag_old / (2.0 * mubar);
