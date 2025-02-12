@@ -367,13 +367,13 @@ OmegahGenericMesh::createSideSets() {
     fprintf(stderr, "name: %s dim: %d id: %d\n",
         name.c_str(), geomMdlEntDim, geomMdlEntId);
     ssNames.push_back(name);
-    if(getOmegahMesh()->dim()==1) {
-      auto tag = Omega_h::mark_by_class(m_mesh.get(),0,geomMdlEntDim,geomMdlEntId);
-      this->declare_part(name,Topo_type::vertex,tag,false);
-    } else {
-      TEUCHOS_TEST_FOR_EXCEPTION (true, std::runtime_error,
-          "Omega_h BuildBox: Only 1d meshes supported.\n");
-    }
+    const auto sideDim = getOmegahMesh()->dim()-1;
+    auto tag = Omega_h::mark_by_class(m_mesh.get(),sideDim,geomMdlEntDim,geomMdlEntId);
+    Topo_type sideTopo;
+    if( sideDim == 0 ) sideTopo = Topo_type::vertex;
+    if( sideDim == 1 ) sideTopo = Topo_type::edge;
+    if( sideDim == 2 ) sideTopo = Topo_type::triangle;
+    this->declare_part(name,sideTopo,tag,false);
   }
   return ssNames;
 }
