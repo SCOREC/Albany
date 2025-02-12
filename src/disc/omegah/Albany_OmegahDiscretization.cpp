@@ -186,6 +186,10 @@ updateMesh ()
   computeGraphs ();
 }
 
+// For each owned vertex in each nodeset, locate an element that is
+// bounded by the vertex and the element local vertex index
+// (i.e., 0,1,2 for a triangle) for that vertex. This pair is inserted
+// into a vector of pairs for the nodeset.
 void OmegahDiscretization::
 computeNodeSets ()
 {
@@ -220,8 +224,6 @@ computeNodeSets ()
     for (auto i : owned_on_ns) {
       std::cout << " node omegah lid: " << i << "\n";
       
-      // FIXME! This is only looking at the FIRST elem that node=i is part of.
-      //        we need to LOOP over all elems that have node=i
       auto node_adj_start = v2e_a2ab[i];
       auto ielem = v2e_ab2b[node_adj_start];
 
