@@ -5,7 +5,7 @@ ANONYMOUS:
     Write Solution to MatrixMarket: 0
     Report Timers: false
   Problem:
-    Name: AdvDiff 1D
+    Name: AdvDiff 2D
     Solution Method: Transient
     Number of PDE Equations: 1
     Dirichlet BCs:
