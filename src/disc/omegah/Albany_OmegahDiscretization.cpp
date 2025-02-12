@@ -397,8 +397,8 @@ checkForAdaptation (const Teuchos::RCP<const Thyra_Vector>& solution ,
 
   // Only do adaptation for simple 1d problems
   auto mesh = m_mesh_struct->getOmegahMesh();
-  if (mesh->dim() != 1) {
-    std::cout << "NOT a 1D Omega_h mesh...\n";
+  if (mesh->dim() != 1 && mesh->dim() != 2) {
+    std::cout << "checkForAdaptation: only supports 1D or 2D Omega_h meshes\n";
     return adapt_data;
   }
   auto& adapt_params = m_disc_params->sublist("Mesh Adaptivity");
