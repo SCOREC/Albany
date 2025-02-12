@@ -2455,8 +2455,9 @@ checkForAdaptation (const Teuchos::RCP<const Thyra_Vector>& solution,
 
   // Only do adaptation for simple 1d problems
   auto mesh1d = Teuchos::rcp_dynamic_cast<TmplSTKMeshStruct<1>>(stkMeshStruct);
-  if (mesh1d.is_null()) {
-    std::cout << "NOT a STK1D mesh...\n";
+  auto mesh2d = Teuchos::rcp_dynamic_cast<TmplSTKMeshStruct<2>>(stkMeshStruct);
+  if (mesh1d.is_null() && mesh2d.is_null() ) {
+    std::cout << "checkForAdaptation: only supports STK1D and STK2D meshes\n";
     return adapt_data;
   }
   auto& adapt_params = discParams->sublist("Mesh Adaptivity");
