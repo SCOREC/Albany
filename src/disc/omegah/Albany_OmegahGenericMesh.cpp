@@ -296,6 +296,18 @@ OmegahGenericMesh::GeomMdlToSets OmegahGenericMesh::setGeomModelToNodeSets(int d
     gm2ns.insert({"NodeSet0", {vtxDim,0}});
     gm2ns.insert({"NodeSet1", {vtxDim,2}});
     //vertices that are not at the endpoints of the line have id=1
+  } else if( dim==2 ) {
+    const int edgeDim = 1;
+    gm2ns.insert({"NodeSet0", {edgeDim,3}});
+    gm2ns.insert({"NodeSet1", {edgeDim,5}});
+    gm2ns.insert({"NodeSet2", {edgeDim,1}});
+    gm2ns.insert({"NodeSet3", {edgeDim,7}});
+    //FIXME have to handle corners
+    // position = {classDim, classId}
+    //xmin,ymin = {0, 0}
+    //xmin,ymax = {0, 2}
+    //xmax,ymin = {0, 6}
+    //xmax,ymax = {0, 8}
   } else {
     TEUCHOS_TEST_FOR_EXCEPTION (true, std::runtime_error,
       "Construction of the map from geometric model ids to node/side sets is only supported for 1d domains.\n");
@@ -309,6 +321,12 @@ OmegahGenericMesh::GeomMdlToSets OmegahGenericMesh::setGeomModelToSideSets(int d
     const int vtxDim = 0;
     gm2ss.insert({"SideSet0", {vtxDim,0}});
     gm2ss.insert({"SideSet1", {vtxDim,2}});
+  } else if( dim==2 ) {
+    const int edgeDim = 1;
+    gm2ss.insert({"SideSet0", {edgeDim,3}});
+    gm2ss.insert({"SideSet1", {edgeDim,5}});
+    gm2ss.insert({"SideSet2", {edgeDim,1}});
+    gm2ss.insert({"SideSet3", {edgeDim,7}});
   } else {
     TEUCHOS_TEST_FOR_EXCEPTION (true, std::runtime_error,
       "Construction of the map from geometric model ids to node/side sets is only supported for 1d domains.\n");
@@ -325,8 +343,17 @@ OmegahGenericMesh::createNodeSets() {
     fprintf(stderr, "name: %s dim: %d id: %d\n",
         name.c_str(), geomMdlEntDim, geomMdlEntId);
     nsNames.push_back(name);
-    auto tag = Omega_h::mark_by_class(m_mesh.get(),0,geomMdlEntDim,geomMdlEntId);
-    this->declare_part(name,Topo_type::vertex,tag,false);
+    TEUCHOS_TEST_FOR_EXCEPTION ((geomMdlEntDim<0 || geomMdlEntDim > 3), std::runtime_error,
+      "Invalid geometric model entity dimension in createNodeSets\n");
+    if( geomMdlEntDim > 0 ) {
+      auto meshEntDim = geomMdlEntDim;
+      auto markedEqualClass = Omega_h::mark_by_class(m_mesh.get(),meshEntDim,geomMdlEntDim,geomMdlEntId);
+      auto tag = mark_down(m_mesh.get(), meshEntDim, OMEGA_H_VERT, markedEqualClass);
+      this->declare_part(name,Topo_type::vertex,tag,false);
+    } else {
+      auto tag = Omega_h::mark_by_class(m_mesh.get(),0,geomMdlEntDim,geomMdlEntId);
+      this->declare_part(name,Topo_type::vertex,tag,false);
+    }
   }
   return nsNames;
 }
@@ -421,6 +448,8 @@ buildBox (const Teuchos::RCP<Teuchos::ParameterList>& params, const int dim)
 
   m_mesh->set_parting(OMEGA_H_ELEM_BASED);
   setCoordinates();
+  Omega_h::vtk::write_parallel("buildBox.vtk", m_mesh.get());
+  Omega_h::vtk::write_parallel("buildBoxDimMinus1.vtk", m_mesh.get(), m_mesh->dim()-1);
 
   // Create the mesh specs
   std::string ebName = "element_block_0";
