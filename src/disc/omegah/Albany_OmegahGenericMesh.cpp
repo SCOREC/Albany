@@ -322,8 +322,6 @@ OmegahGenericMesh::createNodeSets() {
   for( auto& [name, ent] : geomMdlToNodeSets ) {
     const auto geomMdlEntDim = std::get<0>(ent);
     const auto geomMdlEntId = std::get<1>(ent);
-    fprintf(stderr, "name: %s dim: %d id: %d\n",
-        name.c_str(), geomMdlEntDim, geomMdlEntId);
     nsNames.push_back(name);
     auto tag = Omega_h::mark_by_class(m_mesh.get(),0,geomMdlEntDim,geomMdlEntId);
     this->declare_part(name,Topo_type::vertex,tag,false);
@@ -337,8 +335,6 @@ OmegahGenericMesh::createSideSets() {
   for( auto& [name, ent] : geomMdlToSideSets ) {
     const auto geomMdlEntDim = std::get<0>(ent);
     const auto geomMdlEntId = std::get<1>(ent);
-    fprintf(stderr, "name: %s dim: %d id: %d\n",
-        name.c_str(), geomMdlEntDim, geomMdlEntId);
     ssNames.push_back(name);
     if(getOmegahMesh()->dim()==1) {
       auto tag = Omega_h::mark_by_class(m_mesh.get(),0,geomMdlEntDim,geomMdlEntId);
