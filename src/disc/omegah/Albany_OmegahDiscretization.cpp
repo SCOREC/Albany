@@ -369,10 +369,8 @@ checkForAdaptation (const Teuchos::RCP<const Thyra_Vector>& solution ,
     auto h_prev = m_nodes_coordinates[i] - m_nodes_coordinates[i-1];
     auto h_next = m_nodes_coordinates[i+1] - m_nodes_coordinates[i];
     auto hess = (data[i-1] - 2*data[i] + data[i+1]) / (h_prev*h_next);
-       i, data[i-1], data[i], data[i+1]);
     auto grad_prev = (data[i]-data[i-1]) / h_prev;
     auto grad_next = (data[i+1]-data[i]) / h_next;
-        h_prev, h_next, hess, grad_prev, grad_next);
     if (std::fabs(hess)>tol and grad_prev*grad_next<0) {
       adapt_data->type = AdaptationType::Topology;
       break;
@@ -393,7 +391,7 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
       "Error! Adaptation type not supported. Only 'None' and 'Topology' are currently supported.\n");
 
   auto ohMesh = m_mesh_struct->getOmegahMesh();
-  TEUCHOS_TEST_FOR_EXCEPTION (!ohMesh->has_tag(0, solution_dof_name(), std::runtime_error,
+  TEUCHOS_TEST_FOR_EXCEPTION (!ohMesh->has_tag(0, solution_dof_name()), std::runtime_error,
       std::string("OmegahDiscretization::adapt does NOT have tag ") + solution_dof_name() + "\n");
   auto nelems = ohMesh->nglobal_ents(ohMesh->dim());
   const auto desired_nelems = nelems*2;
@@ -416,7 +414,7 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
     nelems = ohMesh->nglobal_ents(ohMesh->dim());
   }
 
-  TEUCHOS_TEST_FOR_EXCEPTION (!ohMesh->has_tag(0, solution_dof_name(), std::runtime_error,
+  TEUCHOS_TEST_FOR_EXCEPTION (!ohMesh->has_tag(0, solution_dof_name()), std::runtime_error,
       std::string("OmegahDiscretization::adapt does NOT have tag ") + solution_dof_name() + "\n");
 
   //create node and side set tags
