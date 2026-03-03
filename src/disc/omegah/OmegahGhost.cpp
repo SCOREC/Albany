@@ -16,14 +16,28 @@ namespace OmegahGhost {
     return Omega_h::get_sum(isElmOwned);
   }
 
+  /**
+   * \brief Get the global ids of owned entities
+   *
+   * This function doesn't consider the closure of owned elements, so if there is a
+   * triangle that is owned but not all the edges (or vertices) bounding it are
+   * owned then it won't return gids for those un-owned edges (vertices).
+   *
+   * \param[in] cmesh The Omega_h mesh (const reference)
+   * \param[in] dim The topological dimension of entities to query (0=vertices, 1=edges,
+   *                2=faces, 3=regions). Must be in range [0, 3].
+   *
+   * \return A host read array of global ids that is sized numOwnedEnts(dim)-1; un-owned
+   * entities of the requested dimension are not included.
+   */
   Omega_h::HostRead<Omega_h::GO> getOwnedEntityGids(const Omega_h::Mesh& cmesh, int dim) {
     auto mesh = const_cast<Omega_h::Mesh&>(cmesh);
     OMEGA_H_CHECK(dim >= 0 && dim <= mesh.dim());
     OMEGA_H_CHECK(mesh.has_tag(dim, "global"));
     auto globals_d = mesh.globals(dim);
     auto owned_d = mesh.owned(dim);
-    auto keptIndicies_d = Omega_h::collect_marked(owned_d);
-    auto ownedGlobals_d = Omega_h::unmap(keptIndicies_d, globals_d, 1);
+    auto keptIndices_d = Omega_h::collect_marked(owned_d);
+    auto ownedGlobals_d = Omega_h::unmap(keptIndices_d, globals_d, 1);
     return Omega_h::HostRead<Omega_h::GO>(ownedGlobals_d);
   }
 
