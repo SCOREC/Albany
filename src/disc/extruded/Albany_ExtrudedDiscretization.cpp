@@ -163,9 +163,9 @@ checkForAdaptationImpl (const Teuchos::RCP<const Thyra_Vector>& /* solution */,
 }
 
 void ExtrudedDiscretization::
-adapt (const Teuchos::RCP<AdaptationData>& /* adaptData */)
+adapt (const Teuchos::RCP<AdaptationData>& adaptData)
 {
-  throw NotYetImplemented("ExtrudedDiscretization::adapt");
+  m_basal_disc->adapt(adaptData);
 }
 
 Teuchos::RCP<Thyra_Vector>
