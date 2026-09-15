@@ -79,6 +79,12 @@ LO OmegahGenericMesh::get_num_local_elements () const
   return nelems;
 }
 
+void OmegahGenericMesh::invalidateCachedMaxGids ()
+{
+  m_max_node_gid = -1;
+  m_max_elem_gid = -1;
+}
+
 GO OmegahGenericMesh::get_max_node_gid () const
 {
   if (m_max_node_gid==-1) {

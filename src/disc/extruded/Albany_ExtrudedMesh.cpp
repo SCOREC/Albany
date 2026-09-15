@@ -230,15 +230,7 @@ setBulkData(const Teuchos::RCP<const Teuchos_Comm>& comm)
   m_basal_mesh->loadRequiredInputFields(comm,upper_reqs);
 
   // Complete initialization of layer data structures
-  const auto max_basal_node_gid = m_basal_mesh->get_max_node_gid();
-  const auto num_basal_nodes    = m_basal_mesh->get_num_local_nodes();
-  const auto max_basal_elem_gid = m_basal_mesh->get_max_elem_gid();
-  const auto num_basal_elems    = m_basal_mesh->get_num_local_elements();
-
-  layers_data.cell.gid->numHorizEntities = max_basal_elem_gid+1;
-  layers_data.cell.lid->numHorizEntities = num_basal_elems;
-  layers_data.node.gid->numHorizEntities = max_basal_node_gid+1;
-  layers_data.node.lid->numHorizEntities = num_basal_nodes;
+  updateHorizEntityCounts();
 
   const auto& ctd = meshSpecs[0]->ctd;
   layers_data.top_side_pos = ctd.side_count-1;
@@ -271,10 +263,28 @@ setBulkData(const Teuchos::RCP<const Teuchos_Comm>& comm)
   vec_states["layers_z_ref"] = layers_data.z_ref;
   int_states["ordering"] = layers_data.cell.lid->layerOrd ? 0 : 1;
   int_states["num_layers"] = num_elem_layers;
-  int64_states["max_2d_elem_gid"] = layers_data.cell.gid->numHorizEntities-1;
-  int64_states["max_2d_node_gid"] = layers_data.cell.gid->numHorizEntities-1;
 
   m_bulk_data_set = true;
+}
+
+// The horizontal entity counts of the layered numbering are all derived from the
+// basal mesh. They must be recomputed whenever the basal mesh changes, e.g. after
+// a mesh adaptation, or every 3d gid/lid computed from them would be stale.
+void ExtrudedMesh::updateHorizEntityCounts ()
+{
+  const auto max_basal_node_gid = m_basal_mesh->get_max_node_gid();
+  const auto num_basal_nodes    = m_basal_mesh->get_num_local_nodes();
+  const auto max_basal_elem_gid = m_basal_mesh->get_max_elem_gid();
+  const auto num_basal_elems    = m_basal_mesh->get_num_local_elements();
+
+  layers_data.cell.gid->numHorizEntities = max_basal_elem_gid+1;
+  layers_data.cell.lid->numHorizEntities = num_basal_elems;
+  layers_data.node.gid->numHorizEntities = max_basal_node_gid+1;
+  layers_data.node.lid->numHorizEntities = num_basal_nodes;
+
+  auto& int64_states = m_field_accessor->getMeshScalarInteger64States();
+  int64_states["max_2d_elem_gid"] = layers_data.cell.gid->numHorizEntities-1;
+  int64_states["max_2d_node_gid"] = layers_data.node.gid->numHorizEntities-1;
 }
 
 } // namespace Albany
