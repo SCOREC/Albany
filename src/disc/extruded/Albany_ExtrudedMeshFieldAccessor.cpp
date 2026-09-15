@@ -307,6 +307,24 @@ void ExtrudedMeshFieldAccessor::extrudeBasalFields (const Teuchos::Array<std::st
 
       std::vector<int> dims3d;
       state.dimensions(dims3d);
+
+      // Guard the writes below: ie3d indexes the 3d state, whose extents are derived
+      // from the (post-adaptation) workset sizes, while ie/in index the basal state.
+      // If the two get out of sync we would silently corrupt the heap.
+      const int max_ie3d = dims[0]>0 ? m_elem_numbering_lid->getId(dims[0]-1,num_elem_layers-1) : -1;
+      TEUCHOS_TEST_FOR_EXCEPTION (max_ie3d>=dims3d[0], std::runtime_error,
+          "[ExtrudedMeshFieldAccessor::extrudeBasalFields] Error! 3d state '" + name + "' is too small.\n"
+          "  - basal num elems : " << dims[0] << "\n"
+          "  - num elem layers : " << num_elem_layers << "\n"
+          "  - max 3d elem idx : " << max_ie3d << "\n"
+          "  - 3d state extent0: " << dims3d[0] << "\n");
+      if (nodal) {
+        TEUCHOS_TEST_FOR_EXCEPTION (2*dims[1]>dims3d[1], std::runtime_error,
+            "[ExtrudedMeshFieldAccessor::extrudeBasalFields] Error! 3d state '" + name + "' has too few nodes.\n"
+            "  - basal nodes/elem: " << dims[1] << "\n"
+            "  - 3d state extent1: " << dims3d[1] << "\n");
+      }
+
       for (int ie=0; ie<dims[0]; ++ie) {
         for (int il=0; il<num_elem_layers; ++il) {
           int ie3d = m_elem_numbering_lid->getId(ie,il);
