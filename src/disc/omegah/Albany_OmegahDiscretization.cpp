@@ -825,6 +825,8 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
   if( writeVtk ) {
     std::string afterAdaptName = "after_adapt" + std::to_string(adaptCount) + ".vtk";
     Omega_h::vtk::write_parallel(afterAdaptName, ohMesh.get());
+    std::string afterAdaptNameOsh = "after_adapt" + std::to_string(adaptCount) + ".osh";
+    Omega_h::binary::write(afterAdaptNameOsh, ohMesh.get());
   }
 
   //adaptation requires ghosting and calls to adapt() don't preserve it
