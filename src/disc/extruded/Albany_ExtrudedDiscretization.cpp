@@ -156,7 +156,18 @@ checkForAdaptation (const Teuchos::RCP<const Thyra_Vector>& solution,
 void ExtrudedDiscretization::
 adapt (const Teuchos::RCP<AdaptationData>& adaptData)
 {
+  // Adapt the basal mesh. This also runs m_basal_disc->updateMesh(), so the basal
+  // disc is consistent with the new basal mesh when we return from here.
   m_basal_disc->adapt(adaptData);
+
+  // The 3d layered numbering is built on top of the basal entity counts, which the
+  // adaptation just changed. Refresh them before rebuilding anything that uses them.
+  m_extruded_mesh->updateHorizEntityCounts();
+
+  // Rebuild the extruded dof managers, worksets, node/side sets, graphs, ... so that
+  // this disc (and its vector spaces) describe the adapted mesh. Without this, the
+  // extruded disc would still advertise the pre-adaptation vector spaces.
+  updateMesh();
 }
 
 Teuchos::RCP<Thyra_Vector>

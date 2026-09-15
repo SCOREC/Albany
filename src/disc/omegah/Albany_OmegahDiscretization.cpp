@@ -832,6 +832,9 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
   //adaptation requires ghosting and calls to adapt() don't preserve it
   ohMesh->set_parting(Omega_h_Parting::OMEGA_H_GHOSTED);
 
+  //the entity counts and gids changed, so drop the cached max node/elem gids
+  m_mesh_struct->invalidateCachedMaxGids();
+
   //create node and side set tags
   m_mesh_struct->createNodeSets();
   m_mesh_struct->createSideSets();
