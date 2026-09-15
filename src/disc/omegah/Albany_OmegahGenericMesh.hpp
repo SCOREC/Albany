@@ -64,6 +64,10 @@ public:
   // so the cache must be dropped after the mesh is modified.
   void invalidateCachedMaxGids ();
 
+  // Recompute meshSpecs[0]->worksetSize from the current element count.
+  // Must be called after the mesh is adapted.
+  void updateWorksetSize ();
+
 protected:
   // Load a mesh from a .osh file
   void loadOmegahMesh ();

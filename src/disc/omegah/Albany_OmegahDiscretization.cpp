@@ -833,7 +833,9 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
   ohMesh->set_parting(Omega_h_Parting::OMEGA_H_GHOSTED);
 
   //the entity counts and gids changed, so drop the cached max node/elem gids
+  //and recompute the workset size from the new element count
   m_mesh_struct->invalidateCachedMaxGids();
+  m_mesh_struct->updateWorksetSize();
 
   //create node and side set tags
   m_mesh_struct->createNodeSets();
