@@ -823,6 +823,13 @@ ExtrudedDiscretization::updateMesh()
 {
   TEUCHOS_FUNC_TIME_MONITOR("ExtrudedDiscretization: updateMesh");
 
+  // Make sure we don't reuse old dof mgrs (if adapting). create_dof_mgr returns any
+  // cached dof mgr matching the requested specs, so without this the extruded disc
+  // would keep the ones built for the pre-adaptation mesh.
+  m_key_to_dof_mgr.clear();
+  m_dof_managers.clear();
+  m_node_dof_managers.clear();
+
   // First, make sure the basal disc is updated
   m_basal_disc->updateMesh();
 
