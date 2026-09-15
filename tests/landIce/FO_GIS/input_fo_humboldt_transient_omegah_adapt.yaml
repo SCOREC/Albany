@@ -117,10 +117,10 @@ ANONYMOUS:
           #  before mesh adaptation is triggered;
           #  i.e., `if (error > threshold) runMeshAdaptation(...)` .
           Error Threshold: 0.3
-          Minimum Edge Length: 0.02 # min desired edge length in physical space
-          Maximum Edge Length: 1.0 # max desired edge length in physical space
-          Write VTK Files: false # write VTK files before and after adaptation
-          Verbose: false # write additional mesh adaptation info to stdout
+          Minimum Edge Length: 2.8 # min desired edge length in physical space
+          Maximum Edge Length: 12.0 # max desired edge length in physical space
+          Write VTK Files: true # write VTK files before and after adaptation
+          Verbose: true # write additional mesh adaptation info to stdout
           Effective Strain Name: sliding_velocity
         Required Fields Info:
           Number Of Fields: 7
