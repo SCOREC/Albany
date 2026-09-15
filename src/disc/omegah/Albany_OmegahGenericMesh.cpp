@@ -85,6 +85,15 @@ void OmegahGenericMesh::invalidateCachedMaxGids ()
   m_max_elem_gid = -1;
 }
 
+// The workset size is computed from the element count, so it is stale after the
+// mesh has been adapted. Recompute it the same way loadOmegahMesh/buildBox do.
+void OmegahGenericMesh::updateWorksetSize ()
+{
+  const int ws_size_max = m_params->get<int>("Workset Size", -1);
+  const int numOwnedElems = OmegahGhost::getNumOwnedElms(*m_mesh);
+  meshSpecs[0]->worksetSize = computeWorksetSize(ws_size_max,numOwnedElems);
+}
+
 GO OmegahGenericMesh::get_max_node_gid () const
 {
   if (m_max_node_gid==-1) {
