@@ -76,6 +76,13 @@ public:
   void finalSetUp(const Teuchos::RCP<Teuchos::ParameterList>& params,
                   const Teuchos::RCP<const Thyra_Vector>& initial_guess = Teuchos::null);
 
+  //! (Re)create the distributed parameters from the current discretization.
+  //! Must be called again after a mesh adaptation, since the parameters own
+  //! vectors built from the (now stale) dof managers' vector spaces.
+  //! Pass is_rebuild=true when calling this after a mesh adaptation.
+  void buildDistributedParameters(const Teuchos::RCP<Teuchos::ParameterList>& params,
+                                  const bool is_rebuild = false);
+
   template<typename Traits>
   void
   setDynamicLayoutSizes(Teuchos::RCP<PHX::FieldManager<PHAL::AlbanyTraits>>& in_fm) const;

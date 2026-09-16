@@ -80,6 +80,7 @@ observeEndTimeStep(const Tempus::Integrator<ST>& integrator)
     disc->adapt (adaptData);
     // Make the solution manager import the new solution from the discretization
     app_->getAdaptSolMgr()->reset_solution_space(false);
+    app_->buildDistributedParameters(app_->getAppPL(),true /* is_rebuild */);
     auto num_time_derivs = app_->getNumTimeDerivs();
 
     // Get new solution
