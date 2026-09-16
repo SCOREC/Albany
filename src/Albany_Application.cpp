@@ -608,14 +608,14 @@ Application::buildDistributedParameters(
     const bool is_rebuild)
 {
   if (is_rebuild) {
-    const auto& problemParams = params->sublist("Problem");
+    auto& problemParams = params->sublist("Problem");
     if (problemParams.isSublist("Parameters")) {
-      const auto& parameterParams = problemParams.sublist("Parameters");
+      auto& parameterParams = problemParams.sublist("Parameters");
       const int num_params = parameterParams.get<int>("Number Of Parameters",0);
       for (int i=0; i<num_params; ++i) {
-        const auto& p_name = util::strint("Parameter",i);
+        const auto p_name = util::strint("Parameter",i);
         if (not parameterParams.isSublist(p_name)) continue;
-        const auto& p_sublist = parameterParams.sublist(p_name);
+        auto& p_sublist = parameterParams.sublist(p_name);
         TEUCHOS_TEST_FOR_EXCEPTION (
             p_sublist.get<std::string>("Type","Scalar")=="Distributed", std::logic_error,
             "Error! Rebuilding distributed parameters after mesh adaptation is not supported "
