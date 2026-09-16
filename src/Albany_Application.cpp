@@ -599,26 +599,33 @@ Application::setScaling(const Teuchos::RCP<Teuchos::ParameterList>& params)
   }
 }
 
+// Create the distributed parameters and initialize them with data stored in the mesh.
+// Each one allocates its vectors from a dof manager's vector spaces, so they must be
+// rebuilt after adaptation, when the dof managers change.
 void
-Application::finalSetUp(
+Application::buildDistributedParameters(
     const Teuchos::RCP<Teuchos::ParameterList>& params,
-    const Teuchos::RCP<const Thyra_Vector>&     initial_guess)
+    const bool is_rebuild)
 {
-  setScaling(params);
+  if (is_rebuild) {
+    const auto& problemParams = params->sublist("Problem");
+    if (problemParams.isSublist("Parameters")) {
+      const auto& parameterParams = problemParams.sublist("Parameters");
+      const int num_params = parameterParams.get<int>("Number Of Parameters",0);
+      for (int i=0; i<num_params; ++i) {
+        const auto& p_name = util::strint("Parameter",i);
+        if (not parameterParams.isSublist(p_name)) continue;
+        const auto& p_sublist = parameterParams.sublist(p_name);
+        TEUCHOS_TEST_FOR_EXCEPTION (
+            p_sublist.get<std::string>("Type","Scalar")=="Distributed", std::logic_error,
+            "Error! Rebuilding distributed parameters after mesh adaptation is not supported "
+            "when a distributed parameter is also a solver parameter.\n"
+            "  - parameter name: " << p_sublist.get<std::string>("Name","<unnamed>") << "\n"
+            "  - fix: refresh the ModelEvaluator's cached nominalValues/bounds vectors.\n");
+      }
+    }
+  }
 
-  // Now that space is allocated in STK for state fields, initialize states.
-  // If the states have been already allocated, skip this.
-  if (!stateMgr.areStateVarsAllocated()) stateMgr.initStateArrays(disc);
-
-  solMgr = rcp(new SolutionManager(
-      params,
-      initial_guess,
-      paramLib,
-      disc,
-      comm));
-
-  // Create Distributed parameters and initialize them with data stored in the
-  // mesh.
   const StateInfoStruct& distParamSIS = disc->getNodalParameterSIS();
   for (const auto& sis : distParamSIS) {
     // Get name of distributed parameter
@@ -680,6 +687,29 @@ Application::finalSetUp(
     // Add parameter to the distributed parameter library
     distParamLib->add(parameter->name(), parameter);
   }
+}
+
+void
+Application::finalSetUp(
+    const Teuchos::RCP<Teuchos::ParameterList>& params,
+    const Teuchos::RCP<const Thyra_Vector>&     initial_guess)
+{
+  setScaling(params);
+
+  // Now that space is allocated in STK for state fields, initialize states.
+  // If the states have been already allocated, skip this.
+  if (!stateMgr.areStateVarsAllocated()) stateMgr.initStateArrays(disc);
+
+  solMgr = rcp(new SolutionManager(
+      params,
+      initial_guess,
+      paramLib,
+      disc,
+      comm));
+
+  // Create Distributed parameters and initialize them with data stored in the
+  // mesh.
+  buildDistributedParameters(params);
 
   // Now setup response functions (see note above)
   for (int i = 0; i < responses.size(); i++) { responses[i]->setup(); }
