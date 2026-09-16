@@ -809,6 +809,16 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
 
     Omega_h::AdaptOpts opts(&(*ohMesh));
     opts.verbosity = (verbose ? Omega_h::EACH_ADAPT : Omega_h::SILENT);
+
+    // Omega_h only carries over the tags listed in xfer_opts; any other tag is simply
+    // dropped from the adapted mesh, and would later be re-allocated zero-filled.
+    // Register every nodal field for linear interpolation, so that fields read from
+    // file at startup (ice_thickness, surface_height, ...) survive the adaptation.
+    // This covers the solution and its time derivatives too, since they are nodal.
+    auto omegah_mfa = Teuchos::rcp_dynamic_cast<OmegahMeshFieldAccessor>(m_mesh_struct->get_field_accessor());
+    for (const auto& fname : omegah_mfa->get_nodal_field_names()) {
+      opts.xfer_opts.type_map[fname] = OMEGA_H_LINEAR_INTERP;
+    }
     opts.xfer_opts.type_map[solution_dof_name()] = OMEGA_H_LINEAR_INTERP;
     opts.xfer_opts.type_map[std::string(solution_dof_name())+"_dot"] = OMEGA_H_LINEAR_INTERP;
 
