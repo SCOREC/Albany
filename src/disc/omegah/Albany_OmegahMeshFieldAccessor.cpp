@@ -431,6 +431,17 @@ setSolutionFieldsMetadata (const int neq)
   addFieldOnMesh("solution",0,neq);
 }
 
+std::vector<std::string> OmegahMeshFieldAccessor::get_nodal_field_names () const
+{
+  std::vector<std::string> names;
+  for (const auto& [name, tag_handle] : m_tags) {
+    if (tag_handle.ent_dim==0) {
+      names.push_back(name);
+    }
+  }
+  return names;
+}
+
 void OmegahMeshFieldAccessor::reset_mesh_tags ()
 {
   for (auto& [name, tag_handle] : m_tags) {
