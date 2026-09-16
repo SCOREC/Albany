@@ -770,6 +770,10 @@ ExtrudedDiscretization::computeNodeSets()
     auto& ns_elem_pos = m_nodeSets[ns];
     auto& ns_coords   = m_nodeSetCoords[ns];
 
+    ns_gids.clear();
+    ns_elem_pos.clear();
+    ns_coords.clear();
+
     // Get the mask for this nodeset from the conn mgr, and count how many nodes are in it
     auto mask = node_conn_mgr->getConnectivityMask(ns);
 
