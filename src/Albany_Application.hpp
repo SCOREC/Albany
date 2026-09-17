@@ -83,6 +83,10 @@ public:
   void buildDistributedParameters(const Teuchos::RCP<Teuchos::ParameterList>& params,
                                   const bool is_rebuild = false);
 
+  //! Re-run the post registration setup of the response field managers, so that
+  //! their field extents/allocations match the (adapted) discretization.
+  void refreshResponseFieldManagers();
+
   template<typename Traits>
   void
   setDynamicLayoutSizes(Teuchos::RCP<PHX::FieldManager<PHAL::AlbanyTraits>>& in_fm) const;

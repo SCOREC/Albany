@@ -85,13 +85,19 @@ void OmegahGenericMesh::invalidateCachedMaxGids ()
   m_max_elem_gid = -1;
 }
 
-// The workset size is computed from the element count, so it is stale after the
-// mesh has been adapted. Recompute it the same way loadOmegahMesh/buildBox do.
+// Freeze the workset size across a mesh adaptation.
+// The Phalanx data layouts (and hence every field allocation) are built once, at
+// problem construction, from meshSpecs[0]->worksetSize. Recomputing the workset size
+// from the new element count would let it grow past those frozen extents, and the
+// evaluators - which loop over the state arrays - would write out of bounds.
+// Keeping it fixed means the adapted mesh is simply split into MORE worksets, each no
+// larger than what the fields were allocated for.
+// NOTE: this mirrors what STKDiscretization::adapt does, where the current workset
+//       size is pushed back into the params before the mesh is rebuilt.
 void OmegahGenericMesh::updateWorksetSize ()
 {
-  const int ws_size_max = m_params->get<int>("Workset Size", -1);
-  const int numOwnedElems = OmegahGhost::getNumOwnedElms(*m_mesh);
-  meshSpecs[0]->worksetSize = computeWorksetSize(ws_size_max,numOwnedElems);
+  // Nothing to do: the workset size must NOT change. This is kept as an explicit
+  // no-op (rather than removing the call) to document the invariant.
 }
 
 GO OmegahGenericMesh::get_max_node_gid () const

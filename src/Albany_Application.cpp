@@ -767,6 +767,16 @@ Application::finalSetUp(
   for (int i = 0; i < responses.size(); ++i) { responses[i]->postRegSetup(); }
 }
 
+// Re-run the post-registration setup of the response field managers.
+// Their field extents (in particular those of the side set fields, see
+// setDynamicLayoutSizes) are computed from the discretization, so after a mesh
+// adaptation they describe the old mesh and their allocations are the wrong size.
+void
+Application::refreshResponseFieldManagers()
+{
+  for (int i = 0; i < responses.size(); ++i) { responses[i]->postRegSetup(); }
+}
+
 template<typename Traits>
 void
 Application::setDynamicLayoutSizes(Teuchos::RCP<PHX::FieldManager<PHAL::AlbanyTraits>>& in_fm) const

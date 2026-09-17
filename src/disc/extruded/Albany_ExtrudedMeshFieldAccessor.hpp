@@ -102,6 +102,11 @@ public:
   void interpolateBasalLayeredFields (const Teuchos::Array<std::string>& basal_fields);
 
   void setWorksetElements (const DualView<int**>& workset_elements) { m_workset_elements = workset_elements; }
+
+  // Maps a (3d) element LID to the workset that owns it, and its index within that
+  // workset. Needed to scatter values computed from the layered numbering (which is
+  // defined over all the elements on the rank) into the per-workset state arrays.
+  void setElemWorksetIdx (const std::vector<WsIdx>& elem_ws_idx) { m_elem_ws_idx = elem_ws_idx; }
 protected:
 
   // This class will rely on the basal mesh to store fields
@@ -109,8 +114,16 @@ protected:
 
   Teuchos::RCP<const LayeredMeshNumbering<LO>>  m_elem_numbering_lid;
 
+  // Where a 3d element lives: the workset that owns it, and its index in that workset
+  struct WsLoc {
+    int ws;
+    int idx;
+  };
+  WsLoc locate3dElem (const int elem_lid, const char* caller) const;
+
   DualView<int**>     m_workset_elements;
   WorksetArray<int>   m_ws_sizes;
+  std::vector<WsIdx>  m_elem_ws_idx;
 };
 
 }  // namespace Albany
