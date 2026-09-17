@@ -573,6 +573,7 @@ ExtrudedDiscretization::computeWorksetInfo()
   m_extruded_mesh->get_field_accessor()->createStateArrays(m_workset_sizes);
   m_extruded_mesh->get_field_accessor()->transferNodeStatesToElemStates();
   m_extruded_mesh->get_extruded_field_accessor()->setWorksetElements(m_workset_elements);
+  m_extruded_mesh->get_extruded_field_accessor()->setElemWorksetIdx(m_elem_ws_idx);
 
   // Extrude/interpolate basal fields
   const auto& extrude_names = m_disc_params->get<Teuchos::Array<std::string>>("Extrude Basal Fields",{});

@@ -81,6 +81,9 @@ observeEndTimeStep(const Tempus::Integrator<ST>& integrator)
     // Make the solution manager import the new solution from the discretization
     app_->getAdaptSolMgr()->reset_solution_space(false);
     app_->buildDistributedParameters(app_->getAppPL(),true /* is_rebuild */);
+    // The response field managers size their fields (in particular the side set ones)
+    // from the discretization, so they must be re-setup against the adapted mesh.
+    app_->refreshResponseFieldManagers();
     auto num_time_derivs = app_->getNumTimeDerivs();
 
     // Get new solution

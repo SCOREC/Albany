@@ -286,15 +286,10 @@ void ExtrudedMesh::updateHorizEntityCounts ()
   int64_states["max_2d_elem_gid"] = layers_data.cell.gid->numHorizEntities-1;
   int64_states["max_2d_node_gid"] = layers_data.node.gid->numHorizEntities-1;
 
-  // The workset size was computed from the basal element count, so it is stale too.
-  // Recompute it exactly as the constructor does. Keeping it in sync matters because
-  // ExtrudedMeshFieldAccessor::extrudeBasalFields assumes the basal and extruded
-  // meshes are split into the same number of worksets.
-  const int num_layers      = layers_data.cell.lid->numLayers;
-  const int basalWorksetSize = m_basal_mesh->meshSpecs[0]->worksetSize;
-  const int worksetSizeMax   = m_params->get<int>("Workset Size");
-  const int ebSizeMaxEstimate = basalWorksetSize * num_layers;
-  meshSpecs[0]->worksetSize = computeWorksetSize(worksetSizeMax, ebSizeMaxEstimate);
+  // NOTE: meshSpecs[0]->worksetSize is deliberately NOT updated here. The Phalanx data
+  //       layouts are built once from it, so it must stay fixed across an adaptation;
+  //       a mesh that grew is split into more worksets instead. See the comment in
+  //       OmegahGenericMesh::updateWorksetSize.
 }
 
 } // namespace Albany

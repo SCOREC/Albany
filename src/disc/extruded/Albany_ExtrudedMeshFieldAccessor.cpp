@@ -283,42 +283,61 @@ void ExtrudedMeshFieldAccessor::setSolutionFieldsMetadata (const int neq)
   m_basal_field_accessor->setSolutionFieldsMetadata(basal_neq);
 }
 
+// Locate the workset that owns a given 3d element, and the element's index within it.
+// The layered numbering is defined over ALL the elements on the rank, while the state
+// arrays are stored per workset, so every id it returns must be translated before it
+// can be used to index a state array.
+// NOTE: with LAYER ordering the elements of one basal column are strided by the total
+//       number of basal elements, so they do NOT all belong to the same 3d workset.
+//       That is why a per-element lookup is needed, rather than a per-workset offset.
+ExtrudedMeshFieldAccessor::WsLoc
+ExtrudedMeshFieldAccessor::locate3dElem (const int elem_lid, const char* caller) const
+{
+  TEUCHOS_TEST_FOR_EXCEPTION (
+      elem_lid<0 or elem_lid>=static_cast<int>(m_elem_ws_idx.size()), std::runtime_error,
+      "[ExtrudedMeshFieldAccessor::" << caller << "] Error! 3d element LID out of range.\n"
+      "  - elem LID   : " << elem_lid << "\n"
+      "  - num elements: " << m_elem_ws_idx.size() << "\n");
+  const auto& wsidx = m_elem_ws_idx[elem_lid];
+  return {wsidx.ws, wsidx.idx};
+}
+
 void ExtrudedMeshFieldAccessor::extrudeBasalFields (const Teuchos::Array<std::string>& basal_fields)
 {
   auto out = Teuchos::VerboseObjectBase::getDefaultOStream();
   const auto& basal_states = m_basal_field_accessor->getElemStates();
   const int num_ws = basal_states.size();
   const int num_elem_layers = m_elem_numbering_lid->numLayers;
+
+  TEUCHOS_TEST_FOR_EXCEPTION (m_elem_ws_idx.empty(), std::runtime_error,
+      "[ExtrudedMeshFieldAccessor::extrudeBasalFields] Error! The elem->workset map was "
+      "not set. Call setElemWorksetIdx before extruding the basal fields.\n");
+
   *out << "[ExtrudedMeshFieldAccessor] Extruding basal fields...\n";
   for (const auto& name : basal_fields) {
     bool nodal = Teuchos::nonnull(nodal_sis.find(name,false));
     *out << " - Extruding " << (nodal ? "nodal" : "cell") << " field '" + name + "'...";
+
+    // Offset of the first basal element of each workset, to turn the workset-local
+    // basal index into the global basal elem LID that the layered numbering expects.
+    int basal_offset = 0;
+
     for (int ws=0; ws<num_ws; ++ws) {
       const auto& bstate = basal_states[ws].at(name);
-      auto& state = elemStateArrays[ws][name];
       auto bview_h = bstate.host();
-      auto view_h = state.host();
       std::vector<int> dims;
       bstate.dimensions(dims);
-      int rank = view_h.rank();
+      // NOTE: rank is that of the 3d state, NOT of the basal one.
+      const auto& state3d = elemStateArrays[ws][name];
+      int rank = state3d.host().rank();
       TEUCHOS_TEST_FOR_EXCEPTION (
           (nodal and (rank<2 or rank>3)) or (not nodal and (rank<1 or rank>2)), std::runtime_error,
           "[ExtrudedMeshFieldAccessor::extrudeBasalFields] Error! Unsupported rank for state '" + name + "'\n");
 
-      std::vector<int> dims3d;
-      state.dimensions(dims3d);
-
-      // Guard the writes below: ie3d indexes the 3d state, whose extents are derived
-      // from the (post-adaptation) workset sizes, while ie/in index the basal state.
-      // If the two get out of sync we would silently corrupt the heap.
-      const int max_ie3d = dims[0]>0 ? m_elem_numbering_lid->getId(dims[0]-1,num_elem_layers-1) : -1;
-      TEUCHOS_TEST_FOR_EXCEPTION (max_ie3d>=dims3d[0], std::runtime_error,
-          "[ExtrudedMeshFieldAccessor::extrudeBasalFields] Error! 3d state '" + name + "' is too small.\n"
-          "  - basal num elems : " << dims[0] << "\n"
-          "  - num elem layers : " << num_elem_layers << "\n"
-          "  - max 3d elem idx : " << max_ie3d << "\n"
-          "  - 3d state extent0: " << dims3d[0] << "\n");
       if (nodal) {
+        // Each 3d elem stacks the basal nodes twice (bottom and top face)
+        std::vector<int> dims3d;
+        state3d.dimensions(dims3d);
         TEUCHOS_TEST_FOR_EXCEPTION (2*dims[1]>dims3d[1], std::runtime_error,
             "[ExtrudedMeshFieldAccessor::extrudeBasalFields] Error! 3d state '" + name + "' has too few nodes.\n"
             "  - basal nodes/elem: " << dims[1] << "\n"
@@ -327,7 +346,13 @@ void ExtrudedMeshFieldAccessor::extrudeBasalFields (const Teuchos::Array<std::st
 
       for (int ie=0; ie<dims[0]; ++ie) {
         for (int il=0; il<num_elem_layers; ++il) {
-          int ie3d = m_elem_numbering_lid->getId(ie,il);
+          // getId works on global elem LIDs, so shift the basal index into global
+          // indexing, then map the resulting 3d id back to its owning workset.
+          const int ie3d_glb = m_elem_numbering_lid->getId(basal_offset+ie,il);
+          const auto loc = locate3dElem(ie3d_glb,"extrudeBasalFields");
+          auto view_h = elemStateArrays[loc.ws][name].host();
+          const int ie3d = loc.idx;
+
           if (nodal) {
             for (int in=0; in<dims[1]; ++in) {
               if (rank==2) {
@@ -351,7 +376,12 @@ void ExtrudedMeshFieldAccessor::extrudeBasalFields (const Teuchos::Array<std::st
           }
         }
       }
-      state.sync_to_dev();
+      basal_offset += dims[0];
+    }
+
+    // The writes above may have touched any workset, so sync them all.
+    for (int ws=0; ws<static_cast<int>(m_ws_sizes.size()); ++ws) {
+      elemStateArrays[ws][name].sync_to_dev();
     }
     *out << "done!\n";
   }
@@ -367,6 +397,10 @@ void ExtrudedMeshFieldAccessor::interpolateBasalLayeredFields (const Teuchos::Ar
   const int num_elem_layers = m_elem_numbering_lid->numLayers;
   const auto& z_ref = mesh_vector_states.at("layers_z_ref");
   const auto& dz_ref = mesh_vector_states.at("layers_dz_ref");
+
+  TEUCHOS_TEST_FOR_EXCEPTION (m_elem_ws_idx.empty(), std::runtime_error,
+      "[ExtrudedMeshFieldAccessor::interpolateBasalLayeredFields] Error! The elem->workset "
+      "map was not set. Call setElemWorksetIdx before interpolating the basal fields.\n");
 
   // Used in case of nodal or quadpoint fields, to do convex interpolation
   int il0, il1;
@@ -409,14 +443,18 @@ void ExtrudedMeshFieldAccessor::interpolateBasalLayeredFields (const Teuchos::Ar
       return std::make_tuple(il0,il1,h0);
     };
 
+    // Offset of the first basal element of each workset, to turn the workset-local
+    // basal index into the global basal elem LID that the layered numbering expects.
+    int basal_offset = 0;
+
     for (int ws=0; ws<num_ws; ++ws) {
       const auto& bstate = basal_states[ws].at(name);
-      auto& state = elemStateArrays[ws][name];
       auto bview_h = bstate.host();
-      auto view_h = state.host();
       std::vector<int> dims;
       bstate.dimensions(dims);
-      int rank = view_h.rank();
+      // NOTE: rank is that of the 3d state, NOT of the basal one (for layered basal
+      //       states the basal rank is one higher, due to the extra layer index).
+      int rank = elemStateArrays[ws][name].host().rank();
       TEUCHOS_TEST_FOR_EXCEPTION (
           (nodal and (rank<2 or rank>3)) or (not nodal and (rank<1 or rank>2)), std::runtime_error,
           "[ExtrudedMeshFieldAccessor::interpolateBasalLayeredFields] Error!\n"
@@ -440,7 +478,13 @@ void ExtrudedMeshFieldAccessor::interpolateBasalLayeredFields (const Teuchos::Ar
 
       for (int ie=0; ie<dims[0]; ++ie) {
         for (int il=0; il<num_elem_layers; ++il) {
-          int ie3d = m_elem_numbering_lid->getId(ie,il);
+          // getId works on global elem LIDs, so shift the basal index into global
+          // indexing, then map the resulting 3d id back to its owning workset.
+          const int ie3d_glb = m_elem_numbering_lid->getId(basal_offset+ie,il);
+          const auto loc = locate3dElem(ie3d_glb,"interpolateBasalLayeredFields");
+          auto view_h = elemStateArrays[loc.ws][name].host();
+          const int ie3d = loc.idx;
+
           if (nodal) {
             for (int side : {0,1}) { // 0=elem-bottom, 1=elem-top
               std::tie(il0, il1, h0) = get_interp_params(il+side);
@@ -470,7 +514,12 @@ void ExtrudedMeshFieldAccessor::interpolateBasalLayeredFields (const Teuchos::Ar
           }
         }
       }
-      state.sync_to_dev();
+      basal_offset += dims[0];
+    }
+
+    // The writes above may have touched any workset, so sync them all.
+    for (int ws=0; ws<static_cast<int>(m_ws_sizes.size()); ++ws) {
+      elemStateArrays[ws][name].sync_to_dev();
     }
     *out << "done!\n";
   }
