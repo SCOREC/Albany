@@ -85,7 +85,7 @@ public:
 
   //! Re-run the post registration setup of the response field managers, so that
   //! their field extents/allocations match the (adapted) discretization.
-  void refreshResponseFieldManagers();
+  void refreshFieldManagers();
 
   template<typename Traits>
   void
