@@ -101,7 +101,7 @@ ANONYMOUS:
         Mark Parts: [boundary_side_set,boundary_side_set_1,boundary_side_set_2,boundary_node_set_3]
         Mesh Adaptivity:
           Refine Only: true
-          Refine Only Max Length: 0.8
+          Refine Only Max Length: 0.98
           Type: SPR # superconvergent patch recovery
           # 'Adapt Ratio' defines the acceptable margin of error,
           #   expressed as a factor greater than zero.

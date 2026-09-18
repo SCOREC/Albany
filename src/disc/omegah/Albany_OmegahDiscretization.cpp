@@ -7,7 +7,6 @@
 #include "OmegahConnManager.hpp"
 #include "Omega_h_adapt.hpp"
 #include "Omega_h_metric.hpp" // isos_from_lengths, clamp_metrics
-#include "Omega_h_refine.hpp" // refine_by_size
 #include "Omega_h_array_ops.hpp"
 #include <Omega_h_file.hpp>   // for Omega_h::binary::write
 #include "Omega_h_recover.hpp" //project_by_fit
@@ -829,7 +828,13 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
         Omega_h::add_implied_metric_tag(ohMesh.get());
       }
       opts.max_length_desired = adapt_params.get<double>("Refine Only Max Length",0.8);
-      Omega_h::refine_by_size(ohMesh.get(), opts);
+      opts.should_coarsen         = false;
+      opts.should_swap            = false;
+      opts.should_coarsen_slivers = false;
+      opts.min_length_desired  = 0.0;
+      opts.min_quality_desired = 0.0;
+      opts.min_quality_allowed = 0.0;
+      Omega_h::adapt(ohMesh.get(), opts);
     } else {
       const auto tgtLength_oh = ohMesh->get_array<Omega_h::Real>(Omega_h::VERT, "tgtLength");
       const auto isos = Omega_h::isos_from_lengths(tgtLength_oh);
