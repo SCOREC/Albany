@@ -7,6 +7,7 @@
 #include "OmegahConnManager.hpp"
 #include "Omega_h_adapt.hpp"
 #include "Omega_h_metric.hpp" // isos_from_lengths, clamp_metrics
+#include "Omega_h_refine.hpp" // refine_by_size
 #include "Omega_h_array_ops.hpp"
 #include <Omega_h_file.hpp>   // for Omega_h::binary::write
 #include "Omega_h_recover.hpp" //project_by_fit
@@ -822,12 +823,24 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
     opts.xfer_opts.type_map[solution_dof_name()] = OMEGA_H_LINEAR_INTERP;
     opts.xfer_opts.type_map[std::string(solution_dof_name())+"_dot"] = OMEGA_H_LINEAR_INTERP;
 
-    const auto tgtLength_oh = ohMesh->get_array<Omega_h::Real>(Omega_h::VERT, "tgtLength");
-    const auto isos = Omega_h::isos_from_lengths(tgtLength_oh);
-    const auto min_size = adapt_params.get<double>("Minimum Edge Length",0.08);
-    const auto max_size = adapt_params.get<double>("Maximum Edge Length",1.0);
-    auto metric = Omega_h::clamp_metrics(ohMesh->nverts(), isos, min_size, max_size);
-    Omega_h::grade_fix_adapt(&(*ohMesh), opts, metric, verbose);
+    if (adapt_params.get<bool>("Refine Only",false)) {
+      if (!ohMesh->comm()->rank()) {
+        std::cout << "WARNING! 'Refine Only' is on: ignoring the SPR size field and "
+                     "refining by edge length.\n";
+      }
+      if (!ohMesh->has_tag(Omega_h::VERT,"metric")) {
+        Omega_h::add_implied_metric_tag(ohMesh.get());
+      }
+      opts.max_length_desired = adapt_params.get<double>("Refine Only Max Length",0.8);
+      Omega_h::refine_by_size(ohMesh.get(), opts);
+    } else {
+      const auto tgtLength_oh = ohMesh->get_array<Omega_h::Real>(Omega_h::VERT, "tgtLength");
+      const auto isos = Omega_h::isos_from_lengths(tgtLength_oh);
+      const auto min_size = adapt_params.get<double>("Minimum Edge Length",0.08);
+      const auto max_size = adapt_params.get<double>("Maximum Edge Length",1.0);
+      auto metric = Omega_h::clamp_metrics(ohMesh->nverts(), isos, min_size, max_size);
+      Omega_h::grade_fix_adapt(&(*ohMesh), opts, metric, verbose);
+    }
 
     if(verbose) printTriCount(*ohMesh, "afterAdapt");
   }
