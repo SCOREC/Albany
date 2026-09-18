@@ -57,6 +57,7 @@ void ExtrudedMeshFieldAccessor::
 createStateArrays (const WorksetArray<int>& worksets_sizes)
 {
   m_ws_sizes = worksets_sizes;
+  elemStateArrays.clear();
   elemStateArrays.resize(worksets_sizes.size());
 
   // We need to be careful here. Say we have a state X with layout (Node).
