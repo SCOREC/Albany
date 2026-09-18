@@ -767,16 +767,6 @@ Application::finalSetUp(
   for (int i = 0; i < responses.size(); ++i) { responses[i]->postRegSetup(); }
 }
 
-// Re-run the post-registration setup of the response field managers.
-// Their field extents (in particular those of the side set fields, see
-// setDynamicLayoutSizes) are computed from the discretization, so after a mesh
-// adaptation they describe the old mesh and their allocations are the wrong size.
-void
-Application::refreshResponseFieldManagers()
-{
-  for (int i = 0; i < responses.size(); ++i) { responses[i]->postRegSetup(); }
-}
-
 template<typename Traits>
 void
 Application::setDynamicLayoutSizes(Teuchos::RCP<PHX::FieldManager<PHAL::AlbanyTraits>>& in_fm) const
@@ -1263,6 +1253,30 @@ void
 Application::postRegSetup<PHAL::AlbanyTraits::HessianVec>()
 {
   postRegSetupDImpl<PHAL::AlbanyTraits::HessianVec>();
+}
+
+// Re-run the post-registration setup of all the field managers.
+// Their field extents (in particular those of the side set fields, see
+// setDynamicLayoutSizes) are computed from the discretization, so after a mesh
+// adaptation they describe the old mesh and their allocations are the wrong size.
+// NOTE: must be defined after the postRegSetup specializations above, or calling them
+//       here would instantiate the primary template instead.
+void
+Application::refreshFieldManagers()
+{
+  // Drop the record of which evaluation types have already been set up, so that the
+  // post registration setup below actually runs again (it early-outs otherwise).
+  phxSetup->clear_evals();
+
+  // Problem field managers (residual/jacobian/... , dirichlet and neumann).
+  postRegSetup<PHAL::AlbanyTraits::Residual>();
+  postRegSetup<PHAL::AlbanyTraits::Jacobian>();
+  postRegSetup<PHAL::AlbanyTraits::Tangent>();
+  postRegSetup<PHAL::AlbanyTraits::DistParamDeriv>();
+  postRegSetup<PHAL::AlbanyTraits::HessianVec>();
+
+  // Response field managers
+  for (int i = 0; i < responses.size(); ++i) { responses[i]->postRegSetup(); }
 }
 
 template <typename EvalT>
