@@ -1059,8 +1059,7 @@ checkDerivatives(
   // Construct a perturbation.
   const double               delta = 1e-7;
   Teuchos::RCP<Thyra_Vector> xd    = w1;
-  xd->randomize(
-      -Teuchos::ScalarTraits<ST>::rmax(), Teuchos::ScalarTraits<ST>::rmax());
+  xd->randomize(0.0, 1.0);
   Teuchos::RCP<Thyra_Vector> xpd = w2;
   {
     const Teuchos::ArrayRCP<const RealType> x_d   = getLocalData(x);
