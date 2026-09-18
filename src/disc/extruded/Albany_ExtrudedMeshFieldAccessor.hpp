@@ -101,6 +101,17 @@ public:
   void extrudeBasalFields (const Teuchos::Array<std::string>& basal_fields);
   void interpolateBasalLayeredFields (const Teuchos::Array<std::string>& basal_fields);
 
+  // DIAGNOSTIC: verify that a 3d nodal state is consistent down each basal column.
+  // The 3d elements of a column share their horizontal faces: the TOP face of the
+  // element at layer il and the BOTTOM face of the element at layer il+1 are the same
+  // physical nodes, so the values written there must agree. This holds for extruded
+  // fields (the same basal value goes to every layer) and for interpolated ones (both
+  // faces evaluate the source data at the same z_ref[il+1], and the interpolation
+  // weights depend only on z_ref/_NLC, which the adaptation does not change).
+  // The check needs no reference data, and it exercises the whole addressing chain --
+  // getId, locate3dElem and the workset maps -- which the adaptation DOES rebuild.
+  void checkColumnContinuity (const std::string& name);
+
   void setWorksetElements (const DualView<int**>& workset_elements) { m_workset_elements = workset_elements; }
 
   // Maps a (3d) element LID to the workset that owns it, and its index within that

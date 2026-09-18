@@ -1,6 +1,10 @@
 #include "Albany_ExtrudedMeshFieldAccessor.hpp"
 #include "Albany_ThyraUtils.hpp"
 
+#include <cmath>
+#include <algorithm>
+#include <vector>
+
 namespace Albany {
 
 ExtrudedMeshFieldAccessor::
@@ -385,6 +389,7 @@ void ExtrudedMeshFieldAccessor::extrudeBasalFields (const Teuchos::Array<std::st
       elemStateArrays[ws][name].sync_to_dev();
     }
     *out << "done!\n";
+    checkColumnContinuity(name);
   }
 }
 
@@ -523,7 +528,78 @@ void ExtrudedMeshFieldAccessor::interpolateBasalLayeredFields (const Teuchos::Ar
       elemStateArrays[ws][name].sync_to_dev();
     }
     *out << "done!\n";
+    checkColumnContinuity(name);
   }
+}
+
+// See the note on this in the header.
+void ExtrudedMeshFieldAccessor::checkColumnContinuity (const std::string& name)
+{
+  auto out = Teuchos::VerboseObjectBase::getDefaultOStream();
+
+  // The invariant is about shared horizontal FACES, so only nodal states have it.
+  if (not Teuchos::nonnull(nodal_sis.find(name,false))) {
+    return;
+  }
+
+  const auto& basal_states = m_basal_field_accessor->getElemStates();
+  const int num_ws = basal_states.size();
+  const int num_elem_layers = m_elem_numbering_lid->numLayers;
+  if (num_elem_layers<2) {
+    return;  // nothing is stacked
+  }
+
+  long long n_checked = 0, n_bad = 0;
+  double worst = 0;
+  int worst_basal = -1, worst_layer = -1;
+
+  int basal_offset = 0;
+  for (int ws=0; ws<num_ws; ++ws) {
+    std::vector<int> dims;
+    basal_states[ws].at(name).dimensions(dims);
+    const int rank = elemStateArrays[ws][name].host().rank();
+    const int nbnodes = dims[1];   // basal nodes per elem
+
+    for (int ie=0; ie<dims[0]; ++ie) {
+      for (int il=0; il<num_elem_layers-1; ++il) {
+        const int lo_glb = m_elem_numbering_lid->getId(basal_offset+ie,il);
+        const int hi_glb = m_elem_numbering_lid->getId(basal_offset+ie,il+1);
+        const auto lo = locate3dElem(lo_glb,"checkColumnContinuity");
+        const auto hi = locate3dElem(hi_glb,"checkColumnContinuity");
+        auto lo_h = elemStateArrays[lo.ws][name].host();
+        auto hi_h = elemStateArrays[hi.ws][name].host();
+
+        auto compare = [&](double top, double bot) {
+          ++n_checked;
+          const double d = std::abs(top-bot);
+          if (d > 1e-10*std::max(1.0,std::abs(top))) {
+            ++n_bad;
+            if (d>worst) { worst=d; worst_basal=basal_offset+ie; worst_layer=il; }
+          }
+        };
+
+        for (int in=0; in<nbnodes; ++in) {
+          if (rank==2) {
+            compare(lo_h(lo.idx,in+nbnodes), hi_h(hi.idx,in));
+          } else if (rank==3) {
+            const int ncmp = lo_h.extent(2);
+            for (int j=0; j<ncmp; ++j) {
+              compare(lo_h(lo.idx,in+nbnodes,j), hi_h(hi.idx,in,j));
+            }
+          }
+        }
+      }
+    }
+    basal_offset += dims[0];
+  }
+
+  *out << "   [column check] '" << name << "': " << n_bad << " mismatched of "
+       << n_checked << " shared-face values";
+  if (n_bad>0) {
+    *out << " (worst " << worst << " at basal elem " << worst_basal
+         << ", layer " << worst_layer << ")";
+  }
+  *out << "\n";
 }
 
 }  // namespace Albany

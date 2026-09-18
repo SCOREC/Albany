@@ -13,6 +13,11 @@
 #include "Albany_Utils.hpp"
 #include "Albany_StringUtils.hpp"
 #include "Albany_GlobalLocalIndexer.hpp"
+
+#include <limits>
+#include <vector>
+#include <algorithm>
+#include <cmath>
 #include "Albany_ProblemUtils.hpp"
 
 #include <PHAL_Dimension.hpp>
@@ -279,6 +284,71 @@ void ExtrudedDiscretization::computeCoordinates ()
         "[ExtrudedDiscretization::computeCoordinates] " << invalid_node_lid_count
         << " node GIDs could not be mapped to local LIDs.\n"
         "This likely indicates a mismatch between the extruded and basal mesh partitioning.\n");
+  }
+
+  // DIAGNOSTIC: verify the 3d column geometry against the basal fields it is built
+  // from. By the formula above, for each basal node:
+  //   z(0)          = s - H            (bed)
+  //   z(num_layers) = s                (surface, since z_ref.back()==1)
+  //   z(l+1) > z(l) for H > 0          (monotone, non-degenerate column)
+  // A column whose height does not match H, or which is inverted/collapsed, corrupts
+  // every velocity gradient in it while leaving the solution values themselves intact.
+  {
+    long long n_cols = 0, n_bad_height = 0, n_non_monotone = 0, n_bad_bed = 0;
+    double worst_height_err = 0, worst_H = 0;
+    double min_H = std::numeric_limits<double>::max(), max_H = -min_H;
+    double min_dz = std::numeric_limits<double>::max();
+
+    for (int ielem=0; ielem<num_basal_elems; ++ielem) {
+      const auto& basal_node_gids = basal_node_dof_mgr->getElementGIDs(ielem);
+      for (int node=0; node<npe_basal; ++node) {
+        const int basal_node_lid = basal_elem_lids(ielem,node);
+        const GO  basal_node_gid = basal_node_gids[node];
+
+        const double Hi = H[basal_node_lid];
+        const double si = s_h[basal_node_lid];
+        min_H = std::min(min_H,Hi);
+        max_H = std::max(max_H,Hi);
+
+        // Gather the column's z coordinates
+        std::vector<double> z(num_layers+1,0.0);
+        bool complete = true;
+        for (int ilev=0; ilev<=num_layers; ++ilev) {
+          const GO node_gid = layers_data.node.gid->getId(basal_node_gid, ilev);
+          const int node_lid = node_indexer->getLocalElement(node_gid);
+          if (node_lid<0) { complete = false; break; }
+          z[ilev] = m_nodes_coordinates[mesh_dim*node_lid + basal_dim];
+        }
+        if (not complete) continue;
+        ++n_cols;
+
+        const double height = z[num_layers] - z[0];
+        const double herr = std::abs(height - Hi);
+        if (herr > 1e-8*std::max(1.0,std::abs(Hi))) {
+          ++n_bad_height;
+          if (herr > worst_height_err) { worst_height_err = herr; worst_H = Hi; }
+        }
+        if (std::abs(z[0] - (si - Hi)) > 1e-8*std::max(1.0,std::abs(si))) {
+          ++n_bad_bed;
+        }
+        for (int ilev=0; ilev<num_layers; ++ilev) {
+          const double dz = z[ilev+1]-z[ilev];
+          min_dz = std::min(min_dz,dz);
+          if (dz <= 0 and Hi > 0) { ++n_non_monotone; break; }
+        }
+      }
+    }
+
+    auto out = Teuchos::VerboseObjectBase::getDefaultOStream();
+    *out << "[coords] 3d column geometry check:\n"
+         << "  - columns checked      : " << n_cols << "\n"
+         << "  - wrong column height  : " << n_bad_height
+         << " (worst |z_top-z_bot - H| = " << worst_height_err
+         << " at H = " << worst_H << ")\n"
+         << "  - wrong bed elevation  : " << n_bad_bed << "\n"
+         << "  - non-monotone columns : " << n_non_monotone << "\n"
+         << "  - thickness range      : [" << min_H << ", " << max_H << "]\n"
+         << "  - min layer spacing dz : " << min_dz << "\n";
   }
 
 #ifdef OUTPUT_TO_SCREEN
