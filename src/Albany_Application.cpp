@@ -18,6 +18,9 @@
 
 #include "PHAL_Utilities.hpp"
 #include "Albany_KokkosUtils.hpp"
+
+#include <algorithm>
+#include <cmath>
 #include "Albany_TpetraThyraUtils.hpp"
 #include "Albany_Hessian.hpp"
 
@@ -51,8 +54,17 @@ int countJac;   // counter which counts instances of Jacobian (for debug output)
 int countRes;   // counter which counts instances of residual (for debug output)
 int countSoln;  // counter which counts instances of solution (for debug output)
 int countScale;
+// Limits the per-phase residual breakdown to the first few evaluations AFTER each mesh
+// adaptation. A plain absolute cap is useless here: the pre-adaptation solve burns
+// through many residual evaluations, so the counter would be exhausted long before the
+// adaptation we actually want to look at. Albany::reset_residual_debug() re-opens the
+// window, and is called when the discretization is adapted.
+int res_debug_count = 1000;
 
 namespace Albany {
+
+// See the note on res_debug_count above.
+void reset_residual_debug () { res_debug_count = 0; }
 
 Application::Application(
     const RCP<const Teuchos_Comm>&     comm_,
@@ -1462,6 +1474,69 @@ Application::computeGlobalResidualImpl(
     cas_manager->combine(overlapped_f, f, CombineMode::ADD);
   }
 
+  // DIAGNOSTIC: break the residual down by assembly phase and by equation. A large
+  // ||F|| right after a mesh adaptation could come from the volume fill, the Neumann
+  // terms, or the Dirichlet BCs; reporting the norm after each phase says which.
+  // Per-equation norms and the worst few entries then localize it further: a residual
+  // concentrated in one equation, or on a handful of dofs, points somewhere very
+  // different than one spread evenly over the mesh.
+  auto report_residual = [&](const char* phase) {
+    if (res_debug_count > 8) return;  // only the first few evaluations are interesting
+    auto data = getLocalData(f.getConst());
+    const auto dof_mgr = disc->getDOFManager();
+    const int neq = dof_mgr->getNumFields();
+
+    std::vector<double> eq_norm2(neq,0.0);
+    std::vector<long long> eq_count(neq,0);
+    // Track the worst entries overall
+    std::vector<std::pair<double,int>> worst;
+    double total2 = 0;
+    for (int i=0; i<static_cast<int>(data.size()); ++i) {
+      const double v = data[i];
+      total2 += v*v;
+      worst.emplace_back(std::abs(v),i);
+    }
+    // Attribute each local dof to an equation via the dof manager's field offsets.
+    // Walk the elements so we can map (elem,offset) -> equation.
+    const auto elem_dof_lids = dof_mgr->elem_dof_lids().host();
+    std::vector<int> lid2eq(data.size(),-1);
+    for (int eq=0; eq<neq; ++eq) {
+      const auto& offsets = dof_mgr->getGIDFieldOffsets(eq);
+      for (int ie=0; ie<static_cast<int>(elem_dof_lids.extent(0)); ++ie) {
+        for (size_t k=0; k<offsets.size(); ++k) {
+          const auto lid = elem_dof_lids(ie,offsets[k]);
+          if (lid>=0 and lid<static_cast<int>(lid2eq.size())) lid2eq[lid] = eq;
+        }
+      }
+    }
+    for (int i=0; i<static_cast<int>(data.size()); ++i) {
+      const int eq = lid2eq[i];
+      if (eq>=0) { eq_norm2[eq] += data[i]*data[i]; ++eq_count[eq]; }
+    }
+
+    const int nshow = 5;
+    std::partial_sort(worst.begin(),
+                      worst.begin()+std::min<size_t>(nshow,worst.size()),
+                      worst.end(),
+                      [](const auto& a, const auto& b){ return a.first>b.first; });
+
+    auto out = Teuchos::VerboseObjectBase::getDefaultOStream();
+    *out << "[resid] after " << phase << ": ||F|| = " << std::sqrt(total2)
+         << " over " << data.size() << " local dofs\n";
+    for (int eq=0; eq<neq; ++eq) {
+      *out << "    eq " << eq << " (" << dof_mgr->getFieldString(eq) << "): ||F_eq|| = "
+           << std::sqrt(eq_norm2[eq]) << " over " << eq_count[eq] << " dofs\n";
+    }
+    *out << "    worst entries:";
+    for (int k=0; k<std::min<int>(nshow,worst.size()); ++k) {
+      const int lid = worst[k].second;
+      *out << " [lid " << lid << ", eq " << lid2eq[lid]
+           << ", |F| " << worst[k].first << "]";
+    }
+    *out << "\n";
+  };
+  report_residual("volume+neumann fill");
+
   // Allocate scaleVec_
   if (scale != 1.0) {
     if (scaleVec_ == Teuchos::null) {
@@ -1497,7 +1572,11 @@ Application::computeGlobalResidualImpl(
 
     // FillType template argument used to specialize Sacado
     dfm->evaluateFields<EvalT>(workset);
+
+    report_residual("dirichlet bcs");
   }
+
+  ++res_debug_count;
 
   // scale residual by scaleVec_ if scaleBCdofs is on
   if (scaleBCdofs == true) { Thyra::ele_wise_scale<ST>(*scaleVec_, f.ptr()); }
@@ -1661,6 +1740,51 @@ Application::computeGlobalJacobianImpl(
     endFEAssembly(jac);
   }
 
+  // DIAGNOSTIC: summarize the Jacobian's structure. GMRES converging in a single
+  // iteration on a ~48k-dof Stokes-FO system means the operator is (nearly) a multiple
+  // of the identity, which no correct Jacobian for this problem can be. Reporting the
+  // number of stored entries, how many are nonzero, and the relative weight of the
+  // diagonal vs the off-diagonal tells us whether the operator has any coupling at all.
+  auto report_jacobian = [&](const char* phase) {
+    if (res_debug_count > 8) return;
+    auto tjac = getTpetraMatrix(jac);
+    auto ljac = tjac->getLocalMatrixHost();
+    const auto nrows = ljac.numRows();
+
+    long long nnz_stored = 0, nnz_nonzero = 0, n_offdiag_nonzero = 0;
+    double diag2 = 0, offdiag2 = 0, max_abs = 0;
+    long long empty_rows = 0, rows_diag_only = 0;
+    for (int r=0; r<nrows; ++r) {
+      auto row = ljac.row(r);
+      long long row_nz = 0, row_off_nz = 0;
+      for (int k=0; k<row.length; ++k) {
+        const double v = row.value(k);
+        ++nnz_stored;
+        if (v!=0.0) {
+          ++nnz_nonzero;
+          ++row_nz;
+          max_abs = std::max(max_abs,std::abs(v));
+          if (row.colidx(k)==r) { diag2 += v*v; }
+          else { offdiag2 += v*v; ++n_offdiag_nonzero; ++row_off_nz; }
+        }
+      }
+      if (row_nz==0) ++empty_rows;
+      else if (row_off_nz==0) ++rows_diag_only;
+    }
+
+    auto out = Teuchos::VerboseObjectBase::getDefaultOStream();
+    *out << "[jac] after " << phase << ": " << nrows << " local rows\n"
+         << "    stored entries   : " << nnz_stored << "\n"
+         << "    nonzero entries  : " << nnz_nonzero << "\n"
+         << "    offdiag nonzeros : " << n_offdiag_nonzero << "\n"
+         << "    ||diag||         : " << std::sqrt(diag2) << "\n"
+         << "    ||offdiag||      : " << std::sqrt(offdiag2) << "\n"
+         << "    max |entry|      : " << max_abs << "\n"
+         << "    rows all-zero    : " << empty_rows << "\n"
+         << "    rows diag-only   : " << rows_diag_only << "\n";
+  };
+  report_jacobian("volume+neumann fill");
+
   // Allocate and populate scaleVec_
   if (scale != 1.0) {
     if (scaleVec_ == Teuchos::null ||
@@ -1750,6 +1874,8 @@ Application::computeGlobalJacobianImpl(
 
     // Close the jacobian
     endModify(jac);
+
+    report_jacobian("dirichlet bcs");
   }
 
   // Apply scaling to residual and Jacobian

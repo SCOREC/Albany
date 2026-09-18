@@ -77,7 +77,21 @@ observeEndTimeStep(const Tempus::Integrator<ST>& integrator)
 
   // Before observing the solution, check if we need to adapt
   if (adaptData->type!=AdaptationType::None) {
+    // DIAGNOSTIC: the solution is stored on the (basal) mesh as a tag, adapted along
+    // with the mesh, then read back into a vector laid out for the NEW discretization.
+    // If that read-back merely permutes the dofs (right values, wrong places), the
+    // 2-norm is preserved while the residual explodes. Comparing the norm before and
+    // after therefore separates "lost/corrupted data" from "mis-ordered data".
+    // NOTE: under 'Refine Only' the old vertices survive exactly and new ones are
+    //       linearly interpolated, so the norm should GROW slightly (more vertices),
+    //       but stay the same order of magnitude.
+    const auto norm_x_before = x->norm_2();
+    const auto norm_xdot_before =
+      Teuchos::nonnull(xdot) ? xdot->norm_2() : ST(0);
+
     disc->adapt (adaptData);
+    // Print the residual breakdown for the evaluations that follow the adaptation.
+    reset_residual_debug();
     // Make the solution manager import the new solution from the discretization
     app_->getAdaptSolMgr()->reset_solution_space(false);
     app_->buildDistributedParameters(app_->getAppPL(),true /* is_rebuild */);
@@ -88,6 +102,24 @@ observeEndTimeStep(const Tempus::Integrator<ST>& integrator)
 
     // Get new solution
     auto sol = app_->getAdaptSolMgr()->getCurrentSolution();
+
+    // DIAGNOSTIC (see the note before disc->adapt above): report the solution norm
+    // across the adaptation. Norm preserved + residual blown up => the read-back
+    // permuted the dofs. Norm changed wildly => data was lost or corrupted.
+    {
+      auto out = Teuchos::VerboseObjectBase::getDefaultOStream();
+      const auto norm_x_after = sol->col(0)->norm_2();
+      Teuchos::OSTab tab(out);
+      *out << "[adapt] solution norm check:\n"
+           << "  - |x|     before: " << norm_x_before
+           << "  after: " << norm_x_after << "\n"
+           << "  - dofs    before: " << x->space()->dim()
+           << "  after: " << sol->col(0)->space()->dim() << "\n";
+      if (num_time_derivs>0) {
+        *out << "  - |xdot|  before: " << norm_xdot_before
+             << "  after: " << sol->col(1)->norm_2() << "\n";
+      }
+    }
 
     Teuchos::RCP<Thyra_Vector> x_nc, xdot_nc, xdotdot_nc;
 

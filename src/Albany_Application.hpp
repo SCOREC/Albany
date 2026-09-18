@@ -43,6 +43,11 @@
 
 namespace Albany {
 
+// DIAGNOSTIC: re-open the window in which computeGlobalResidualImpl prints its
+// per-phase/per-equation residual breakdown. Call this after a mesh adaptation, so the
+// breakdown covers the evaluations that follow it rather than the ones that preceded it.
+void reset_residual_debug ();
+
 class Application
 {
 public:
