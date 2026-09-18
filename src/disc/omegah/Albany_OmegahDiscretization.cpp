@@ -758,6 +758,56 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
   const auto verbose = adapt_params.get<bool>("Verbose",false);
   const auto writeVtk = adapt_params.get<bool>("Write VTK Files",false);
 
+  // DIAGNOSTIC: stamp each vertex with its CURRENT global id as a real-valued tag, so
+  // that vertices can be followed across the adaptation (which renumbers both the
+  // vertices and their global ids). Registered for LINEAR_INTERP below, so that:
+  //   - a vertex that survives carries back its original id exactly (an integer)
+  //   - a vertex created by splitting an edge carries the AVERAGE of its two parents
+  // NOTE: this must happen BEFORE the 'before_adapt' vtk write below, or the tag would
+  //       be missing from that file and only show up in 'after_adapt'.
+  {
+    auto gids = ohMesh->globals(Omega_h::VERT);
+    Omega_h::Write<Omega_h::Real> marker(ohMesh->nverts());
+    auto fill = OMEGA_H_LAMBDA(Omega_h::LO v) {
+      marker[v] = static_cast<Omega_h::Real>(gids[v]);
+    };
+    Omega_h::parallel_for(ohMesh->nverts(), fill);
+    if (ohMesh->has_tag(Omega_h::VERT,"adapt_probe_id")) {
+      ohMesh->set_tag(Omega_h::VERT,"adapt_probe_id",Omega_h::read(marker));
+    } else {
+      ohMesh->add_tag(Omega_h::VERT,"adapt_probe_id",1,Omega_h::read(marker));
+    }
+  }
+
+  // DIAGNOSTIC: node/side set sizes BEFORE the adaptation, to compare against the
+  // post-rebuild counts printed at the end of this function. The sets are rebuilt from
+  // geometric classification (mark_by_class), so a set that comes back with fewer
+  // entities than the refined boundary warrants means the classification of the new
+  // entities did not inherit the boundary the set is defined on.
+  {
+    const auto& mesh_specs = *m_mesh_struct->meshSpecs[0];
+    std::vector<std::string> all_sets = mesh_specs.nsNames;
+    all_sets.insert(all_sets.end(),mesh_specs.ssNames.begin(),mesh_specs.ssNames.end());
+    if (!ohMesh->comm()->rank()) {
+      std::cout << "[adapt] node/side set sizes BEFORE adapt "
+                   "(nverts " << ohMesh->nverts()
+                << ", nedges " << ohMesh->nents(1)
+                << ", nelems " << ohMesh->nelems() << "):\n";
+    }
+    for (const auto& n : all_sets) {
+      for (int d=0; d<=ohMesh->dim(); ++d) {
+        if (not ohMesh->has_tag(d,n)) continue;
+        auto marked = Omega_h::HostRead<Omega_h::I8>(ohMesh->get_array<Omega_h::I8>(d,n));
+        long long cnt = 0;
+        for (int i=0; i<marked.size(); ++i) { if (marked[i]) ++cnt; }
+        if (!ohMesh->comm()->rank()) {
+          std::cout << "  [set] '" << n << "' (dim " << d << "): "
+                    << cnt << " marked of " << ohMesh->nents(d) << "\n";
+        }
+      }
+    }
+  }
+
   if( writeVtk ) {
     if (ohMesh->dim() == 1) {
       // solution_grad_norm tag is not set for 1d problems
@@ -823,11 +873,24 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
     opts.xfer_opts.type_map[solution_dof_name()] = OMEGA_H_LINEAR_INTERP;
     opts.xfer_opts.type_map[std::string(solution_dof_name())+"_dot"] = OMEGA_H_LINEAR_INTERP;
 
+    // Transfer the vertex marker stamped before the vtk write above, so that vertices
+    // can be followed across the adaptation. See the note there.
+    opts.xfer_opts.type_map["adapt_probe_id"] = OMEGA_H_LINEAR_INTERP;
+
     if (adapt_params.get<bool>("Refine Only",false)) {
+      // Debug knob: ignore the SPR size field and simply split long edges.
+      // Refinement only ADDS vertices: every vertex of the old mesh survives with its
+      // exact values, and new ones are linearly interpolated along the edge they split.
+      // So a correct field transfer should leave the solution essentially unchanged,
+      // and the residual should stay close to the pre-adaptation one. If it does not,
+      // the error is in WHAT we transfer, not in information lost to coarsening.
       if (!ohMesh->comm()->rank()) {
         std::cout << "WARNING! 'Refine Only' is on: ignoring the SPR size field and "
                      "refining by edge length.\n";
       }
+      // refine_by_size marks the edges whose METRIC length exceeds max_length_desired.
+      // Use the implied metric of the current mesh, so that metric length is ~1
+      // everywhere, and a threshold below 1 asks for (nearly uniform) refinement.
       if (!ohMesh->has_tag(Omega_h::VERT,"metric")) {
         Omega_h::add_implied_metric_tag(ohMesh.get());
       }
@@ -860,12 +923,50 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
   m_mesh_struct->invalidateCachedMaxGids();
   m_mesh_struct->updateWorksetSize();
 
+  // DIAGNOSTIC: count the entities in each node/side set BEFORE they are rebuilt.
+  // The adaptation deletes these tags, so this reads what survived (typically nothing);
+  // the useful comparison is against the post-rebuild counts printed below, and against
+  // the counts from the previous adaptation.
+  auto count_set_ents = [&](const std::vector<std::string>& names, const char* what) {
+    for (const auto& n : names) {
+      // The part topology decides which dimension the tag lives on; look for it on
+      // whichever dimension actually carries it.
+      for (int d=0; d<=ohMesh->dim(); ++d) {
+        if (not ohMesh->has_tag(d,n)) continue;
+        auto marked = Omega_h::HostRead<Omega_h::I8>(ohMesh->get_array<Omega_h::I8>(d,n));
+        long long cnt = 0;
+        for (int i=0; i<marked.size(); ++i) { if (marked[i]) ++cnt; }
+        if (!ohMesh->comm()->rank()) {
+          std::cout << "  [" << what << "] '" << n << "' (dim " << d << "): "
+                    << cnt << " marked of " << ohMesh->nents(d) << "\n";
+        }
+      }
+    }
+  };
+
   //create node and side set tags
-  m_mesh_struct->createNodeSets();
-  m_mesh_struct->createSideSets();
+  auto nsNames = m_mesh_struct->createNodeSets();
+  auto ssNames = m_mesh_struct->createSideSets();
+
+  if (!ohMesh->comm()->rank()) {
+    std::cout << "[adapt] node/side set sizes after rebuild "
+                 "(nverts " << ohMesh->nverts()
+              << ", nedges " << ohMesh->nents(1)
+              << ", nelems " << ohMesh->nelems() << "):\n";
+  }
+  count_set_ents(nsNames,"node set");
+  count_set_ents(ssNames,"side set");
 
   //update coordinates
   m_mesh_struct->setCoordinates();
+
+  if( writeVtk ) {
+    // Write again now that the node/side set tags have been regenerated: the
+    // 'after_adapt' file above is written before createNodeSets/createSideSets run,
+    // so those tags are necessarily missing from it.
+    std::string name = "after_adapt_sets" + std::to_string(adaptCount) + ".vtk";
+    Omega_h::vtk::write_parallel(name, ohMesh.get());
+  }
 
   auto omegah_mfa = Teuchos::rcp_dynamic_cast<OmegahMeshFieldAccessor>(m_mesh_struct->get_field_accessor());
   omegah_mfa->reset_mesh_tags();

@@ -6,6 +6,9 @@
 
 #include "Omega_h_mesh.hpp"
 
+#include <map>
+#include <vector>
+
 namespace Albany {
 
 class OmegahMeshFieldAccessor : public AbstractMeshFieldAccessor
@@ -113,8 +116,32 @@ public:
   // before adapting, or they would come back zero-filled on the new mesh.
   std::vector<std::string> get_nodal_field_names () const;
 
+  // DIAGNOSTIC: round-trip check for the packed multi-component solution tag.
+  // saveVector packs a Thyra vector into the mesh tag; fillVector reads it back after
+  // the mesh (and the dof manager) have been rebuilt by adaptation. For a vertex that
+  // SURVIVED the adaptation the two must agree exactly.
+  //
+  // Identifying survivors is the hard part. The 'adapt_probe_id' marker alone is NOT
+  // enough: it is transferred with LINEAR_INTERP, so a vertex splitting an edge whose
+  // endpoints are k-1 and k+1 gets the exact integer k, colliding with the survivor
+  // that legitimately carries k. We therefore ALSO record the vertex coordinates and
+  // require both to match: a survivor keeps its coordinates, whereas a split vertex
+  // sits at the midpoint of the edge it split.
+  void probe_record (const std::string& field_name, int dim, int ncomps);
+  void probe_compare (const std::string& field_name, int dim, int ncomps,
+                      const Teuchos::ArrayRCP<const ST>& thyra_data,
+                      const DOFManager& dof_mgr);
+
 protected:
   Teuchos::RCP<Omega_h::Mesh>   m_mesh;
+
+  // Data recorded for one vertex at save time (pre-adapt)
+  struct ProbeEntry {
+    std::vector<ST> vals;   // the ncomps packed tag components
+    std::vector<ST> coords; // vertex coordinates, used to disambiguate survivors
+  };
+  // global vertex id (pre-adapt) -> recorded data
+  std::map<Omega_h::GO,ProbeEntry> m_probe_vals;
 
   struct TagHandle {
     Omega_h::Write<ST> array;
