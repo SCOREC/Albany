@@ -22,6 +22,9 @@
 
 #include <Panzer_IntrepidFieldPattern.hpp>
 
+#include <map>
+#include <utility>
+
 using ExecutionSpace = PHX::Device::execution_space;
 using MemorySpace = PHX::Device::memory_space;
 
@@ -715,7 +718,9 @@ checkForAdaptation (const Teuchos::RCP<const Thyra_Vector>& solution ,
       std::cout << "SPR Computed Error: " << error
                 << " Error Threshold: " << errorThreshold << '\n';
     }
-    if( error > errorThreshold ) { //trigger adaptation
+    // Under 'Null Adapt' the mesh is left alone, so the SPR error is irrelevant: we
+    // want the rebuild to run on every call regardless of the error.
+    if( error > errorThreshold || adapt_params.get<bool>("Null Adapt",false) ) { //trigger adaptation
       Omega_h::Write<Omega_h::Real> tgtLength_oh(tgtLength);
       mesh->add_tag<Omega_h::Real>(Omega_h::VERT, "tgtLength", 1, tgtLength_oh, false,
           Omega_h::ArrayType::VectorND);
@@ -805,6 +810,27 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
         }
       }
     }
+
+    // Baseline for the post-adapt histogram printed after the adaptation below.
+    if (!ohMesh->comm()->rank()) {
+      std::cout << "[adapt] geometric classification histogram before adapt:\n";
+    }
+    for (int d=0; d<=ohMesh->dim(); ++d) {
+      if (not ohMesh->has_tag(d,"class_dim") or not ohMesh->has_tag(d,"class_id")) continue;
+      auto cdim = Omega_h::HostRead<Omega_h::Byte>(ohMesh->get_array<Omega_h::Byte>(d,"class_dim"));
+      auto cid  = Omega_h::HostRead<Omega_h::ClassId>(ohMesh->get_array<Omega_h::ClassId>(d,"class_id"));
+      std::map<std::pair<int,int>,long long> hist;
+      for (int i=0; i<cdim.size(); ++i) {
+        ++hist[{static_cast<int>(cdim[i]),static_cast<int>(cid[i])}];
+      }
+      if (!ohMesh->comm()->rank()) {
+        std::cout << "  [class] ent dim " << d << " (" << ohMesh->nents(d) << " ents):";
+        for (const auto& [k,v] : hist) {
+          std::cout << " (cdim " << k.first << ",cid " << k.second << ")=" << v;
+        }
+        std::cout << "\n";
+      }
+    }
   }
 
   if( writeVtk ) {
@@ -876,7 +902,18 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
     // can be followed across the adaptation. See the note there.
     opts.xfer_opts.type_map["adapt_probe_id"] = OMEGA_H_LINEAR_INTERP;
 
-    if (adapt_params.get<bool>("Refine Only",false)) {
+    if (adapt_params.get<bool>("Null Adapt",false)) {
+      // Debug knob: do not touch the mesh at all, but still run everything that follows
+      // an adaptation (gid invalidation, workset/dof mgr rebuild, node/side set rebuild,
+      // field transfer read-back, refreshFieldManagers). The adapted mesh is identical
+      // to the old one, element for element, so a correct rebuild must reproduce the
+      // pre-adapt residual exactly. If ||F|| still blows up, the defect is in the
+      // rebuild path, not in anything the adaptation does to the mesh.
+      if (!ohMesh->comm()->rank()) {
+        std::cout << "WARNING! 'Null Adapt' is on: the mesh is left unchanged and only "
+                     "the post-adaptation rebuild is exercised.\n";
+      }
+    } else if (adapt_params.get<bool>("Refine Only",false)) {
       // Debug knob: ignore the SPR size field and simply split long edges.
       // Refinement only ADDS vertices: every vertex of the old mesh survives with its
       // exact values, and new ones are linearly interpolated along the edge they split.
@@ -945,6 +982,48 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
       }
     }
   };
+
+  // The sets are rebuilt by mark_by_class, so membership is decided entirely by the
+  // (class_dim,class_id) pair each entity carries. Omega_h inherits that pair onto the
+  // entities it creates, so a misclassification there silently changes which entities
+  // land in a set while leaving the counts plausible. Print the histogram so the
+  // classification can be compared across the adaptation directly.
+  {
+    if (!ohMesh->comm()->rank()) {
+      std::cout << "[adapt] geometric classification histogram after adapt:\n";
+    }
+    for (int d=0; d<=ohMesh->dim(); ++d) {
+      if (not ohMesh->has_tag(d,"class_dim") or not ohMesh->has_tag(d,"class_id")) continue;
+      auto cdim = Omega_h::HostRead<Omega_h::Byte>(ohMesh->get_array<Omega_h::Byte>(d,"class_dim"));
+      auto cid  = Omega_h::HostRead<Omega_h::ClassId>(ohMesh->get_array<Omega_h::ClassId>(d,"class_id"));
+      std::map<std::pair<int,int>,long long> hist;
+      for (int i=0; i<cdim.size(); ++i) {
+        ++hist[{static_cast<int>(cdim[i]),static_cast<int>(cid[i])}];
+      }
+      if (!ohMesh->comm()->rank()) {
+        std::cout << "  [class] ent dim " << d << " (" << ohMesh->nents(d) << " ents):";
+        for (const auto& [k,v] : hist) {
+          std::cout << " (cdim " << k.first << ",cid " << k.second << ")=" << v;
+        }
+        std::cout << "\n";
+      }
+    }
+  }
+
+  // What survived the adaptation itself, before the sets are regenerated from the
+  // geometric classification. Anything marked here was carried over by Omega_h; the
+  // rest is whatever mark_by_class decides below.
+  {
+    const auto& mesh_specs = *m_mesh_struct->meshSpecs[0];
+    if (!ohMesh->comm()->rank()) {
+      std::cout << "[adapt] node/side set sizes AFTER adapt, BEFORE rebuild "
+                   "(nverts " << ohMesh->nverts()
+                << ", nedges " << ohMesh->nents(1)
+                << ", nelems " << ohMesh->nelems() << "):\n";
+    }
+    count_set_ents(mesh_specs.nsNames,"node set");
+    count_set_ents(mesh_specs.ssNames,"side set");
+  }
 
   //create node and side set tags
   auto nsNames = m_mesh_struct->createNodeSets();
