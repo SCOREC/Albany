@@ -22,6 +22,9 @@
 
 #include <Panzer_IntrepidFieldPattern.hpp>
 
+#include <map>
+#include <utility>
+
 using ExecutionSpace = PHX::Device::execution_space;
 using MemorySpace = PHX::Device::memory_space;
 
@@ -712,7 +715,9 @@ checkForAdaptationImpl (const Teuchos::RCP<const Thyra_Vector>& solution ,
       std::cout << "SPR Computed Error: " << error
                 << " Error Threshold: " << errorThreshold << '\n';
     }
-    if( error > errorThreshold ) { //trigger adaptation
+    // Under 'Null Adapt' the mesh is left alone, so the SPR error is irrelevant: we
+    // want the rebuild to run on every call regardless of the error.
+    if( error > errorThreshold || adapt_params.get<bool>("Null Adapt",false) ) { //trigger adaptation
       Omega_h::Write<Omega_h::Real> tgtLength_oh(tgtLength);
       mesh->add_tag<Omega_h::Real>(Omega_h::VERT, "tgtLength", 1, tgtLength_oh, false,
           Omega_h::ArrayType::VectorND);
@@ -819,7 +824,28 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
     opts.xfer_opts.type_map[solution_dof_name()] = OMEGA_H_LINEAR_INTERP;
     opts.xfer_opts.type_map[std::string(solution_dof_name())+"_dot"] = OMEGA_H_LINEAR_INTERP;
 
-    if (adapt_params.get<bool>("Refine Only",false)) {
+    // Transfer the vertex marker stamped before the vtk write above, so that vertices
+    // can be followed across the adaptation. See the note there.
+    opts.xfer_opts.type_map["adapt_probe_id"] = OMEGA_H_LINEAR_INTERP;
+
+    if (adapt_params.get<bool>("Null Adapt",false)) {
+      // Debug knob: do not touch the mesh at all, but still run everything that follows
+      // an adaptation (gid invalidation, workset/dof mgr rebuild, node/side set rebuild,
+      // field transfer read-back, refreshFieldManagers). The adapted mesh is identical
+      // to the old one, element for element, so a correct rebuild must reproduce the
+      // pre-adapt residual exactly. If ||F|| still blows up, the defect is in the
+      // rebuild path, not in anything the adaptation does to the mesh.
+      if (!ohMesh->comm()->rank()) {
+        std::cout << "WARNING! 'Null Adapt' is on: the mesh is left unchanged and only "
+                     "the post-adaptation rebuild is exercised.\n";
+      }
+    } else if (adapt_params.get<bool>("Refine Only",false)) {
+      // Debug knob: ignore the SPR size field and simply split long edges.
+      // Refinement only ADDS vertices: every vertex of the old mesh survives with its
+      // exact values, and new ones are linearly interpolated along the edge they split.
+      // So a correct field transfer should leave the solution essentially unchanged,
+      // and the residual should stay close to the pre-adaptation one. If it does not,
+      // the error is in WHAT we transfer, not in information lost to coarsening.
       if (!ohMesh->comm()->rank()) {
         std::cout << "WARNING! 'Refine Only' is on: ignoring the SPR size field and "
                      "refining by edge length.\n";
@@ -868,6 +894,14 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
 
   //update coordinates
   m_mesh_struct->setCoordinates();
+
+  if( writeVtk ) {
+    // Write again now that the node/side set tags have been regenerated: the
+    // 'after_adapt' file above is written before createNodeSets/createSideSets run,
+    // so those tags are necessarily missing from it.
+    std::string name = "after_adapt_sets" + std::to_string(adaptCount) + ".vtk";
+    Omega_h::vtk::write_parallel(name, ohMesh.get());
+  }
 
   auto omegah_mfa = Teuchos::rcp_dynamic_cast<OmegahMeshFieldAccessor>(m_mesh_struct->get_field_accessor());
   omegah_mfa->reset_mesh_tags();
