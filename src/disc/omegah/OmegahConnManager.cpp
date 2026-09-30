@@ -578,7 +578,7 @@ std::vector<int> OmegahConnManager::getConnectivityMask (const std::string& sub_
   bool hasPartTag = false;
   const int part_dim = this->part_dim();
   for(int d=0; d<part_dim; d++)
-    hasPartTag |= mesh->has_tag(d, sub_part_name);
+    hasPartTag &= mesh->has_tag(d, sub_part_name);
   std::stringstream ss;
   ss << "Error! Omega_h does not have a tag named \"" << sub_part_name
      << "\" associated with any mesh entity dimension\n";
