@@ -153,6 +153,13 @@ public:
   //! No-op (returns 0) if the basal disc is not an Omega_h one.
   int checkKnownValueTag (const std::string& context) const;
 
+  //! DIAGNOSTIC: map each 3d solution dof LID to where it sits in the mesh --
+  //! (basal node GID, node level, coordinates). Used to localize residual entries:
+  //! a set of bad dofs sharing a level implicates a level-indexed field, one sharing
+  //! a region implicates a spatial field.
+  void describeSolutionDofs (
+      std::map<int,std::tuple<GO,int,std::vector<double>>>& lid_loc) const;
+
 protected:
 
   void computeCoordinates();

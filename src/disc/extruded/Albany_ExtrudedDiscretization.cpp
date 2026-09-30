@@ -109,13 +109,20 @@ ExtrudedDiscretization::setupMLCoords()
       getOverlapVectorSpace());
 }
 
+// NOTE: the 3d solution must be PERMUTED into the basal per-column layout before it
+// can be stored on the basal mesh -- see the note on basal_cmp in
+// ExtrudedMeshFieldAccessor. Forwarding the 3d vector straight to the basal disc
+// packs dofs from the other nodes of a basal element into a vertex's column.
 void
 ExtrudedDiscretization::writeSolutionToMeshDatabase(
     const Thyra_Vector& soln,
     const Teuchos::RCP<const Thyra_MultiVector>& soln_dxdp,
     const bool overlapped)
 {
-  m_basal_disc->writeSolutionToMeshDatabase(soln,soln_dxdp,overlapped);
+  TEUCHOS_TEST_FOR_EXCEPTION (soln_dxdp != Teuchos::null, std::runtime_error,
+      "ExtrudedDiscretization::writeSolutionToMeshDatabase does not support sensitivities yet.");
+  m_extruded_mesh->get_extruded_field_accessor()
+      ->saveLayeredSolution(soln,solution_dof_name(),overlapped);
 }
 
 void
@@ -125,7 +132,11 @@ ExtrudedDiscretization::writeSolutionToMeshDatabase(
     const Thyra_Vector& soln_dot,
     const bool overlapped)
 {
-  m_basal_disc->writeSolutionToMeshDatabase(soln,soln_dxdp,soln_dot,overlapped);
+  TEUCHOS_TEST_FOR_EXCEPTION (soln_dxdp != Teuchos::null, std::runtime_error,
+      "ExtrudedDiscretization::writeSolutionToMeshDatabase does not support sensitivities yet.");
+  auto mfa = m_extruded_mesh->get_extruded_field_accessor();
+  mfa->saveLayeredSolution(soln,    solution_dof_name(),          overlapped);
+  mfa->saveLayeredSolution(soln_dot,solution_dof_name()+"_dot",   overlapped);
 }
 
 void
@@ -136,7 +147,12 @@ ExtrudedDiscretization::writeSolutionToMeshDatabase(
     const Thyra_Vector& soln_dotdot,
     const bool overlapped)
 {
-  m_basal_disc->writeSolutionToMeshDatabase(soln,soln_dxdp,soln_dot,soln_dotdot,overlapped);
+  TEUCHOS_TEST_FOR_EXCEPTION (soln_dxdp != Teuchos::null, std::runtime_error,
+      "ExtrudedDiscretization::writeSolutionToMeshDatabase does not support sensitivities yet.");
+  auto mfa = m_extruded_mesh->get_extruded_field_accessor();
+  mfa->saveLayeredSolution(soln,       solution_dof_name(),           overlapped);
+  mfa->saveLayeredSolution(soln_dot,   solution_dof_name()+"_dot",    overlapped);
+  mfa->saveLayeredSolution(soln_dotdot,solution_dof_name()+"_dotdot", overlapped);
 }
 
 void
@@ -711,18 +727,15 @@ checkKnownValueTag (const std::string& context) const
         // Right vertex, but the decoded (eq,level) is not even in range.
         ++n_wrong_slot;
       } else {
-        // The value belongs to this vertex. Does the SLOT it sits in agree with the
-        // (level,eq) it encodes? Both candidate packings are accepted here and the
-        // one that holds is reported, since which of the two saveVector produces is
-        // exactly the open question -- what is NOT acceptable is neither holding.
-        const bool layer_major = (c == got_lev*neq + got_eq);
-        const bool comp_major  = (c == got_eq*nlev + got_lev);
-        if (layer_major or comp_major) { ++n_ok; }
+        // The value belongs to this vertex. The slot it sits in must be the one
+        // ExtrudedMeshFieldAccessor::basal_cmp defines -- layer-major. (This used to
+        // accept component-major too, while which packing saveVector produced was
+        // still an open question; the convention is now fixed, so only it passes.)
+        if (c == got_lev*neq + got_eq) { ++n_ok; }
         else                           { ++n_wrong_slot; }
       }
 
-      if ((got_g!=static_cast<long long>(g) or
-           (c != got_lev*neq+got_eq and c != got_eq*nlev+got_lev))
+      if ((got_g!=static_cast<long long>(g) or c != got_lev*neq+got_eq)
           and n_shown<max_show) {
         ++n_shown;
         *out << "  [rank " << rank << "] vert gid " << g << " slot " << c
@@ -749,6 +762,55 @@ checkKnownValueTag (const std::string& context) const
   (void) context;
   return 0;
 #endif // ALBANY_OMEGAH
+}
+
+void ExtrudedDiscretization::
+describeSolutionDofs (
+    std::map<int,std::tuple<GO,int,std::vector<double>>>& lid_loc) const
+{
+  lid_loc.clear();
+
+  const auto& layers_data = m_extruded_mesh->layers_data;
+  const int   num_layers  = layers_data.cell.lid->numLayers;
+  const int   mesh_dim    = getNumDim();
+
+  const auto& dof_mgr       = getDOFManager();
+  const auto& elem_dof_lids = dof_mgr->elem_dof_lids().host();
+  const auto& node_indexer  = getNodeDOFManager()->ov_indexer();
+  const auto& basal_node_dof_mgr = m_basal_disc->getNodeDOFManager();
+  const auto& basal_elems   = basal_node_dof_mgr->getAlbanyConnManager()->getElementsInBlock();
+  const int num_basal_elems = basal_elems.size();
+
+  for (int ibelem=0; ibelem<num_basal_elems; ++ibelem) {
+    const auto& basal_node_gids = basal_node_dof_mgr->getElementGIDs(ibelem);
+    const int num_basal_nodes = basal_node_gids.size();
+    for (int ilay=0; ilay<num_layers; ++ilay) {
+      const int ielem3d = layers_data.cell.lid->getId(ibelem,ilay);
+      for (int eq=0; eq<m_neq; ++eq) {
+        const auto& offsets = dof_mgr->getGIDFieldOffsets(eq);
+        for (size_t k=0; k<offsets.size(); ++k) {
+          const LO dof_lid = elem_dof_lids(ielem3d,offsets[k]);
+          if (dof_lid<0 or lid_loc.count(dof_lid)) { continue; }
+
+          const int iside = static_cast<int>(k)/num_basal_nodes;
+          const int n     = static_cast<int>(k)%num_basal_nodes;
+          const int ilev  = ilay + iside;
+          const GO  bgid  = basal_node_gids[n];
+
+          // 3d node coordinates, via the same route computeCoordinates uses.
+          std::vector<double> xyz(mesh_dim,0.0);
+          const GO ngid = layers_data.node.gid->getId(bgid,ilev);
+          const LO nlid = node_indexer->getLocalElement(ngid);
+          if (nlid>=0) {
+            for (int d=0; d<mesh_dim; ++d) {
+              xyz[d] = m_nodes_coordinates[mesh_dim*nlid + d];
+            }
+          }
+          lid_loc.emplace(dof_lid,std::make_tuple(bgid,ilev,std::move(xyz)));
+        }
+      }
+    }
+  }
 }
 
 Teuchos::RCP<AdaptationData>
@@ -778,10 +840,18 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
   updateMesh();
 }
 
+// NOTE: the inverse of the permutation applied by writeSolutionToMeshDatabase.
+// Both directions live in ExtrudedMeshFieldAccessor and share one walk, so they
+// cannot drift apart.
 Teuchos::RCP<Thyra_Vector>
 ExtrudedDiscretization::getSolutionField(bool overlapped) const
 {
-  return m_basal_disc->getSolutionField(overlapped);
+  auto soln = Thyra::createMember(overlapped ? getOverlapVectorSpace()
+                                             : getVectorSpace());
+  soln->assign(0.0);
+  m_extruded_mesh->get_extruded_field_accessor()
+      ->fillLayeredSolution(*soln,solution_dof_name(),overlapped);
+  return soln;
 }
 
 void
@@ -800,7 +870,15 @@ ExtrudedDiscretization::getSolutionMV(
     Thyra_MultiVector& result,
     const bool         overlapped) const
 {
-  m_basal_disc->getSolutionMV(result,overlapped);
+  const std::string names[3] = {
+    solution_dof_name(),
+    solution_dof_name()+"_dot",
+    solution_dof_name()+"_dotdot"
+  };
+  auto mfa = m_extruded_mesh->get_extruded_field_accessor();
+  for (int icol=0; icol<result.domain()->dim(); ++icol) {
+    mfa->fillLayeredSolution(*result.col(icol),names[icol],overlapped);
+  }
 }
 
 void
@@ -1247,6 +1325,17 @@ ExtrudedDiscretization::computeWorksetInfo()
   m_extruded_mesh->get_field_accessor()->transferNodeStatesToElemStates();
   m_extruded_mesh->get_extruded_field_accessor()->setWorksetElements(m_workset_elements);
   m_extruded_mesh->get_extruded_field_accessor()->setElemWorksetIdx(m_elem_ws_idx);
+
+  // Give the accessor what it needs to permute the 3d solution into the basal
+  // per-column layout. This must happen HERE (not in setFieldData): the dof managers
+  // below are rebuilt by every updateMesh, including the one that follows adaptation,
+  // so a pointer captured earlier would go stale exactly when the mesh changes.
+  m_extruded_mesh->get_extruded_field_accessor()->setLayeredSolutionInfo(
+      m_extruded_mesh->layers_data.node.lid,
+      m_basal_disc->getNodeDOFManager(),
+      m_basal_disc->getDOFManager(),
+      getDOFManager(),
+      m_neq);
 
   // Extrude/interpolate basal fields
   const auto& extrude_names = m_disc_params->get<Teuchos::Array<std::string>>("Extrude Basal Fields",{});
