@@ -19,8 +19,12 @@
 #include "PHAL_Utilities.hpp"
 #include "Albany_KokkosUtils.hpp"
 
+#include "Albany_ExtrudedDiscretization.hpp"
+
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <tuple>
 #include "Albany_TpetraThyraUtils.hpp"
 #include "Albany_Hessian.hpp"
 
@@ -1534,6 +1538,47 @@ Application::computeGlobalResidualImpl(
            << ", |F| " << worst[k].first << "]";
     }
     *out << "\n";
+
+    // DIAGNOSTIC: a residual entry that does not move when the solution moves is not
+    // a bad value, it is a contribution that does not depend on the solution there.
+    // Knowing WHERE those dofs sit separates the possibilities: all at one level means
+    // a level-indexed field (temperature, the layered velocity guess) is wrong; all in
+    // one region means a spatial field is; scattered means neither.
+    // Build lid -> (basal vertex gid, node level, coords) via the extruded addressing.
+    {
+      auto ext_disc = Teuchos::rcp_dynamic_cast<ExtrudedDiscretization>(disc);
+      if (Teuchos::nonnull(ext_disc)) {
+        std::map<int,std::tuple<GO,int,std::vector<double>>> lid_loc;
+        ext_disc->describeSolutionDofs(lid_loc);
+        *out << "    worst entry locations:\n";
+        for (int k=0; k<std::min<int>(nshow,worst.size()); ++k) {
+          const int lid = worst[k].second;
+          auto it = lid_loc.find(lid);
+          *out << "      lid " << lid << " eq " << lid2eq[lid] << ": ";
+          if (it==lid_loc.end()) {
+            *out << "<not reached by the column walk>\n";
+            continue;
+          }
+          const auto& [bgid,ilev,xyz] = it->second;
+          *out << "basal gid " << bgid << ", level " << ilev << ", coords (";
+          for (size_t d=0; d<xyz.size(); ++d) { *out << xyz[d] << (d+1<xyz.size()?",":""); }
+          *out << ")\n";
+        }
+        // Level histogram over the worst 50, so a level-concentration is visible even
+        // if the top 5 happen to be spread out.
+        const int nhist = std::min<size_t>(50,worst.size());
+        std::partial_sort(worst.begin(),worst.begin()+nhist,worst.end(),
+                          [](const auto& a, const auto& b){ return a.first>b.first; });
+        std::map<int,int> lev_hist;
+        for (int k=0; k<nhist; ++k) {
+          auto it = lid_loc.find(worst[k].second);
+          if (it!=lid_loc.end()) ++lev_hist[std::get<1>(it->second)];
+        }
+        *out << "    worst-" << nhist << " level histogram:";
+        for (const auto& [lev,cnt] : lev_hist) { *out << " L" << lev << "=" << cnt; }
+        *out << "\n";
+      }
+    }
   };
   report_residual("volume+neumann fill");
 
