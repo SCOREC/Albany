@@ -91,6 +91,37 @@ observeEndTimeStep(const Tempus::Integrator<ST>& integrator)
     const auto norm_xdot_before =
       Teuchos::nonnull(xdot) ? xdot->norm_2() : ST(0);
 
+    // DIAGNOSTIC: run the same 3d dump + tag-layout probe BEFORE the adaptation, so
+    // the two can be compared. If the tag slots already fail to line up with this
+    // column's cmp_* values here, the scrambling predates the adaptation (i.e. it is
+    // in how the solution is packed into the tag, or in the layered numbering that
+    // was built at setup). If it only appears after, the adaptation rebuild is at
+    // fault. 'x' is the pre-adapt solution, on the pre-adapt (owned) vector space.
+    {
+      auto ext_disc = Teuchos::rcp_dynamic_cast<ExtrudedDiscretization>(disc);
+      if (Teuchos::nonnull(ext_disc)) {
+        static int pre_wedge_dump_count = 0;
+        const std::string name = "before_adapt_3d" + std::to_string(pre_wedge_dump_count++);
+        ext_disc->writeWedgeVtk(name, x, false);
+
+        // DIAGNOSTIC: the probe above can only report that the tag slots and the
+        // solution disagree; it cannot say WHICH of the two is wrong, because the
+        // real solution values carry no information about where they came from.
+        // So push a synthetic vector whose every entry names its own (basal vertex,
+        // level, equation) through the exact same save path, then read the tag back
+        // and check each slot against what that naming demands. Any mismatch is
+        // unambiguously a defect in the packing at
+        // OmegahMeshFieldAccessor::saveVector (the mesh_data_h[ent_lid*ncomps+icmp]
+        // write), not a misreading of a convention.
+        // The real solution is written back immediately afterwards, so the mesh tag
+        // is left exactly as it would have been and the adaptation below is unaffected.
+        auto known = ext_disc->makeKnownValueSolution();
+        ext_disc->writeSolutionToMeshDatabase(*known, Teuchos::null, false);
+        ext_disc->checkKnownValueTag("pre-adapt, straight after saveVector");
+        ext_disc->writeSolutionToMeshDatabase(*x, Teuchos::null, false);
+      }
+    }
+
     disc->adapt (adaptData);
     // Print the residual breakdown for the evaluations that follow the adaptation.
     reset_residual_debug();

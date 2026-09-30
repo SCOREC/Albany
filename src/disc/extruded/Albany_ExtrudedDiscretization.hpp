@@ -127,6 +127,32 @@ public:
                       const Teuchos::RCP<const Thyra_Vector>& solution = Teuchos::null,
                       const bool solution_is_overlapped = false) const;
 
+  //! DIAGNOSTIC: build a solution-space vector whose value at every dof is known a
+  //! priori from the dof's position in the mesh, so that any reshuffling done while
+  //! packing it into the basal Omega_h 'solution' tag (OmegahMeshFieldAccessor::
+  //! saveVector) can be read straight off the tag instead of inferred.
+  //!
+  //! The value at (basal vertex g, node level l, equation eq) is
+  //!     eq*1e6 + (g + nBasalVerts*l)
+  //! i.e. the 3d node's "column id", tagged by equation in the millions digit. Every
+  //! value is therefore distinct across the whole 3d mesh and decodes by inspection:
+  //! from a value v, eq = v/1e6, l = (v%1e6)/nBasalVerts, g = (v%1e6)%nBasalVerts.
+  //! 'g' is the basal node GID (which equals the Omega_h basal vertex global id), so
+  //! a tag slot at basal vertex g must hold a value whose g-part is g itself -- any
+  //! other g-part means saveVector wrote a vertex's data to the wrong vertex, and a
+  //! wrong l-part means it landed in the wrong level slot of the right vertex.
+  //!
+  //! Returns an OWNED (non-overlapped) vector, matching what writeSolutionToMeshDatabase
+  //! and saveVector are normally handed.
+  Teuchos::RCP<Thyra_Vector> makeKnownValueSolution () const;
+
+  //! DIAGNOSTIC companion to makeKnownValueSolution: read the basal Omega_h 'solution'
+  //! tag back and check every slot against the value the above encoding demands.
+  //! Reports, per failure mode, how many slots hold data belonging to another vertex
+  //! vs. another level, with a few exemplars. Returns the number of bad slots.
+  //! No-op (returns 0) if the basal disc is not an Omega_h one.
+  int checkKnownValueTag (const std::string& context) const;
+
 protected:
 
   void computeCoordinates();

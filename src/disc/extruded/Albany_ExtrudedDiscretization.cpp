@@ -15,6 +15,10 @@
 #include "Albany_GlobalLocalIndexer.hpp"
 #include "Albany_CombineAndScatterManager.hpp"
 
+#if defined(ALBANY_OMEGAH)
+#include "Albany_OmegahGenericMesh.hpp"
+#endif
+
 #include <limits>
 #include <vector>
 #include <algorithm>
@@ -319,6 +323,175 @@ writeWedgeVtk (const std::string& basename,
     }
   }
 
+  // DIAGNOSTIC: resolve the layout of the packed basal 'solution' tag empirically.
+  // The basal Omega_h mesh stores the whole 3d solution at each basal vertex as one
+  // tag of neq*(num_layers+1) components. Which slot holds which (layer,equation) is
+  // NOT self-evident: 'velocity' is packed component-major (icomp*numLayers+il, see
+  // readLayeredVectorFileSerial) while the solution is built through the layered
+  // numbering, so the two conventions coexist in the same mesh. Rather than infer it,
+  // print -- for a few INTERIOR basal vertices -- all the tag slots next to the
+  // cmp_* values of the 6 nodes of that vertex's column, taken from the same vector
+  // this file is being written from.
+  //   - if the column's cmp_0 values land at slots {0,neq,2*neq,...}: layer-major
+  //     (slot = neq*layer + eq)
+  //   - if they land at slots {0,1,2,...}: component-major (slot = layer + eq*nlev)
+  //   - if they appear at neither, the tag and the read-back vector disagree, which
+  //     is a genuine transfer bug rather than a layout misreading.
+  // Interior vertices only: a boundary vertex has SDBC-prescribed dofs, which agree
+  // trivially and so prove nothing about the layout.
+#if defined(ALBANY_OMEGAH)
+  if (not soln_at_nodes.empty()) {
+    auto out = Teuchos::VerboseObjectBase::getDefaultOStream();
+    auto basal_ms = m_basal_disc->getMeshStruct();
+    auto oh_mesh_struct = Teuchos::rcp_dynamic_cast<OmegahGenericMesh>(basal_ms);
+    if (Teuchos::nonnull(oh_mesh_struct)) {
+      auto oh_mesh = oh_mesh_struct->getOmegahMesh();
+      const std::string tag_name = solution_dof_name();
+      if (oh_mesh->has_tag(0,tag_name)) {
+        auto tag_h    = Omega_h::HostRead<ST>(oh_mesh->get_array<ST>(0,tag_name));
+        auto gids_h   = Omega_h::HostRead<Omega_h::GO>(oh_mesh->globals(0));
+        auto coords_h = Omega_h::HostRead<Omega_h::Real>(oh_mesh->coords());
+        const int bdim   = oh_mesh->dim();
+        const int nverts = oh_mesh->nverts();
+        const int ncomps = tag_h.size()/std::max(nverts,1);
+        const int nlev   = num_layers+1;
+
+        // A basal vertex is "interior" if it is not on any marked boundary part.
+        std::vector<bool> on_bdry(nverts,false);
+        for (const auto& nsname : basal_ms->meshSpecs[0]->nsNames) {
+          for (int d=0; d<=oh_mesh->dim(); ++d) {
+            if (not oh_mesh->has_tag(d,nsname)) { continue; }
+            if (d!=0) { continue; }  // only vertex marks identify a vertex directly
+            auto marked = Omega_h::HostRead<Omega_h::I8>(oh_mesh->get_array<Omega_h::I8>(d,nsname));
+            for (int i=0; i<nverts and i<marked.size(); ++i) {
+              if (marked[i]) { on_bdry[i] = true; }
+            }
+          }
+        }
+
+        *out << "[tag layout probe] basal '" << tag_name << "' tag: " << ncomps
+             << " comps/vertex, neq=" << neq << ", node layers=" << nlev << "\n";
+
+        // The layered numbering turns (basal entity, level) into a 3d id by striding
+        // with numHorizEntities (LAYER ordering). If that count disagrees with the
+        // number of basal vertices the tag is actually packed over, then values land a
+        // fixed number of vertices away from where they are read -- which shows up as
+        // one column's layer values scattered across several vertices' tags.
+        const auto n_horiz_node_gid = layers_data.node.gid->numHorizEntities;
+        const auto n_horiz_node_lid = layers_data.node.lid->numHorizEntities;
+        const auto n_horiz_cell_gid = layers_data.cell.gid->numHorizEntities;
+        *out << "  [counts] layered numHorizEntities: node.gid=" << n_horiz_node_gid
+             << " node.lid=" << n_horiz_node_lid
+             << " cell.gid=" << n_horiz_cell_gid << "\n"
+             << "  [counts] omegah basal mesh: nverts=" << nverts
+             << " nelems=" << oh_mesh->nelems() << "\n"
+             << "  [counts] basal disc: num local nodes="
+             << basal_ms->get_num_local_nodes()
+             << " num local elems=" << basal_ms->get_num_local_elements() << "\n"
+             << "  [counts] extruded: 3d nodes(ov)=" << num_nodes
+             << " basal elems walked=" << num_basal_elems
+             << " elem layers=" << num_layers << "\n";
+        if (static_cast<long long>(n_horiz_node_gid)!=static_cast<long long>(nverts)) {
+          *out << "  [counts] *** MISMATCH: layered node.gid numHorizEntities ("
+               << n_horiz_node_gid << ") != omegah nverts (" << nverts << ").\n"
+                  "      The tag is packed over nverts, but 3d ids stride by "
+               << n_horiz_node_gid << ".\n";
+        }
+
+        // Walk basal elements to reach basal node GIDs, then match each to its
+        // Omega_h vertex by global id.
+        int n_shown = 0;
+        for (int ibelem=0; ibelem<num_basal_elems and n_shown<3; ++ibelem) {
+          const auto& bgids = basal_node_dof_mgr->getElementGIDs(ibelem);
+          for (int n=0; n<3 and n_shown<3; ++n) {
+            const GO bgid = bgids[n];
+            // Find this basal node's Omega_h vertex by matching global ids.
+            int vtx = -1;
+            for (int v=0; v<nverts; ++v) {
+              if (static_cast<GO>(gids_h[v])==bgid) { vtx = v; break; }
+            }
+            if (vtx<0 or on_bdry[vtx]) { continue; }
+
+            *out << "  [vertex] basal gid " << bgid << " (oh vert " << vtx << ") at (";
+            for (int d=0; d<bdim; ++d) { *out << coords_h[bdim*vtx+d] << (d+1<bdim?",":""); }
+            *out << ")\n";
+
+            *out << "    tag slots:";
+            for (int c=0; c<ncomps; ++c) {
+              *out << " [" << c << "]=" << tag_h[vtx*ncomps+c];
+            }
+            *out << "\n";
+
+            // The same column, as written to the vtk file, bottom (layer 0) to top.
+            for (int eq=0; eq<neq; ++eq) {
+              *out << "    cmp_" << eq << " by layer:";
+              for (int ilev=0; ilev<nlev; ++ilev) {
+                const GO ngid = layers_data.node.gid->getId(bgid,ilev);
+                const LO nlid = node_indexer->getLocalElement(ngid);
+                if (nlid<0) { *out << " L" << ilev << "=<n/a>"; continue; }
+                *out << " L" << ilev << "=" << soln_at_nodes[eq][nlid];
+              }
+              *out << "\n";
+            }
+
+            // The addressing chain, level by level, for this column. Three routes to
+            // the same node must agree:
+            //   (a) node.gid->getId(bgid,ilev) -> ov node indexer -> node LID
+            //       (what this writer and computeCoordinates use; LAYER-ordered on
+            //        the GID side, so level strides by numHorizEntities)
+            //   (b) node.lid->getId(basal_lid,ilev)
+            //       (hardcoded COLUMN, so level strides by 1 within a column block)
+            //   (c) the solution dof mgr's lid for (eq 0) at that node
+            //       (the layout the solution vector and the basal tag actually use:
+            //        vertex-major, level striding by neq inside an 18-dof block)
+            // If (a) and (c) disagree, the writer is reading the wrong dofs. If (a)
+            // and (b) disagree, the GID and LID numberings are not describing the
+            // same column. Either explains the tag/cmp mismatch without any of the
+            // data itself being wrong.
+            {
+              // Find this basal node's LOCAL id, needed for route (b).
+              const LO b_nlid = basal_node_dof_mgr->ov_indexer()->getLocalElement(bgid);
+              *out << "    [addressing] basal gid " << bgid
+                   << " basal lid " << b_nlid << "\n";
+              const auto& sol_dm = getDOFManager();
+              const auto& sol_elem_lids = sol_dm->elem_dof_lids().host();
+              const auto& sol_offsets0  = sol_dm->getGIDFieldOffsets(0);
+              for (int ilev=0; ilev<nlev; ++ilev) {
+                const GO ngid_a = layers_data.node.gid->getId(bgid,ilev);
+                const LO nlid_a = node_indexer->getLocalElement(ngid_a);
+                const LO nlid_b = (b_nlid>=0)
+                                ? layers_data.node.lid->getId(b_nlid,ilev) : LO(-1);
+                // Route (c): the 3d element of this column at the element-layer just
+                // below (or at, for level 0) this node level, then the dof offset for
+                // the matching node position within that element.
+                const int ilay = std::min(ilev,num_layers-1);
+                const int side = (ilev==ilay) ? 0 : 1;   // 0=elem bottom, 1=elem top
+                const int ielem3d = layers_data.cell.lid->getId(ibelem,ilay);
+                const int k = side*3 + n;                // layer-by-layer node order
+                LO dof_c = -1;
+                if (k < static_cast<int>(sol_offsets0.size())) {
+                  dof_c = sol_elem_lids(ielem3d,sol_offsets0[k]);
+                }
+                *out << "      L" << ilev
+                     << ": (a) gid=" << ngid_a << " -> lid=" << nlid_a
+                     << " | (b) lid=" << nlid_b
+                     << " | (c) elem3d=" << ielem3d << " k=" << k
+                     << " dof_lid=" << dof_c;
+                if (nlid_a>=0) { *out << " | cmp_0(a)=" << soln_at_nodes[0][nlid_a]; }
+                *out << "\n";
+              }
+            }
+            ++n_shown;
+          }
+        }
+        if (n_shown==0) {
+          *out << "  (no interior basal vertex found to probe)\n";
+        }
+      }
+    }
+  }
+#endif // ALBANY_OMEGAH
+
   // --- Write one legacy VTK file per rank.
   const int rank = m_comm->getRank();
   const std::string fname = basename + "_r" + std::to_string(rank) + ".vtk";
@@ -391,6 +564,191 @@ writeWedgeVtk (const std::string& basename,
     *out << "[writeWedgeVtk] rank " << rank << ": skipped " << num_bad_cells
          << " column element(s) with unmapped node LIDs.\n";
   }
+}
+
+// DIAGNOSTIC. See the note on the declaration in the header for the encoding and
+// what a violation of it proves.
+Teuchos::RCP<Thyra_Vector>
+ExtrudedDiscretization::makeKnownValueSolution () const
+{
+  const auto& layers_data  = m_extruded_mesh->layers_data;
+  const int   num_layers   = layers_data.cell.lid->numLayers;
+  const int   neq          = m_neq;
+
+  const auto& dof_mgr        = getDOFManager();
+  const auto& elem_dof_lids  = dof_mgr->elem_dof_lids().host();
+  const auto& basal_node_dof_mgr = m_basal_disc->getNodeDOFManager();
+  const auto& basal_elems    = basal_node_dof_mgr->getAlbanyConnManager()->getElementsInBlock();
+  const int   num_basal_elems = basal_elems.size();
+
+  // The stride that separates two node levels of the same column in the encoding.
+  // It must be the SAME number the layered numbering uses to stride levels, or the
+  // encoded value would not be decodable the way the header describes. Take it from
+  // the numbering itself rather than from the local vertex count (which differs per
+  // rank) so the values are globally unique and rank-independent.
+  const GO nbasal = layers_data.node.gid->numHorizEntities;
+
+  // Fill the OVERLAP vector first: elem_dof_lids are overlap lids (see writeWedgeVtk),
+  // and every dof of every local element -- including ghosts -- must get a value.
+  auto x_ov = Thyra::createMember(getOverlapVectorSpace());
+  x_ov->assign(0.0);
+  auto x_ov_data = getNonconstLocalData(x_ov);
+
+  long long num_set = 0;
+  for (int ibelem=0; ibelem<num_basal_elems; ++ibelem) {
+    const auto& basal_node_gids = basal_node_dof_mgr->getElementGIDs(ibelem);
+    TEUCHOS_TEST_FOR_EXCEPTION (basal_node_gids.size()!=3, std::runtime_error,
+        "[makeKnownValueSolution] Expected a triangular basal element, got "
+        << basal_node_gids.size() << " nodes.\n");
+    for (int ilay=0; ilay<num_layers; ++ilay) {
+      const int ielem3d = layers_data.cell.lid->getId(ibelem,ilay);
+      for (int eq=0; eq<neq; ++eq) {
+        const auto& offsets = dof_mgr->getGIDFieldOffsets(eq);
+        // offsets are ordered layer-by-layer: the 3 bottom nodes, then the 3 top ones
+        for (size_t k=0; k<offsets.size(); ++k) {
+          const LO dof_lid = elem_dof_lids(ielem3d,offsets[k]);
+          if (dof_lid<0) { continue; }
+          const int ilev = ilay + static_cast<int>(k)/3;   // absolute NODE level
+          const int n    = static_cast<int>(k)%3;
+          const GO  g    = basal_node_gids[n];
+          x_ov_data[dof_lid] = static_cast<ST>(eq)*1e6
+                             + static_cast<ST>(g + nbasal*ilev);
+          ++num_set;
+        }
+      }
+    }
+  }
+
+  // Overlap -> owned. Shared dofs get the same value from every owner, so INSERT
+  // cannot produce a rank-dependent answer here.
+  auto x = Thyra::createMember(getVectorSpace());
+  x->assign(0.0);
+  auto cas = createCombineAndScatterManager(getVectorSpace(),getOverlapVectorSpace());
+  cas->combine(*x_ov,*x,CombineMode::INSERT);
+
+  auto out = Teuchos::VerboseObjectBase::getDefaultOStream();
+  if (m_comm->getRank()==0) {
+    *out << "[knownValue] built a synthetic solution: value = eq*1e6 + (basal_gid + "
+         << nbasal << "*level)\n"
+         << "  - neq " << neq << ", node levels " << (num_layers+1)
+         << ", layered node stride (numHorizEntities) " << nbasal << "\n"
+         << "  - owned dofs " << getLocalSubdim(getVectorSpace())
+         << ", overlap dofs " << getLocalSubdim(getOverlapVectorSpace())
+         << ", dof writes " << num_set << "\n";
+  }
+  return x;
+}
+
+int ExtrudedDiscretization::
+checkKnownValueTag (const std::string& context) const
+{
+#if defined(ALBANY_OMEGAH)
+  auto basal_ms = m_basal_disc->getMeshStruct();
+  auto oh_mesh_struct = Teuchos::rcp_dynamic_cast<OmegahGenericMesh>(basal_ms);
+  if (Teuchos::is_null(oh_mesh_struct)) { return 0; }
+  auto oh_mesh = oh_mesh_struct->getOmegahMesh();
+
+  const std::string tag_name = solution_dof_name();
+  if (not oh_mesh->has_tag(0,tag_name)) { return 0; }
+
+  auto out = Teuchos::VerboseObjectBase::getDefaultOStream();
+
+  auto tag_h   = Omega_h::HostRead<ST>(oh_mesh->get_array<ST>(0,tag_name));
+  auto gids_h  = Omega_h::HostRead<Omega_h::GO>(oh_mesh->globals(0));
+  auto owned_h = Omega_h::HostRead<Omega_h::I8>(oh_mesh->owned(0));
+
+  const int nverts = oh_mesh->nverts();
+  const int ncomps = nverts>0 ? tag_h.size()/nverts : 0;
+  const int neq    = m_neq;
+  const int nlev   = m_extruded_mesh->layers_data.cell.lid->numLayers + 1;
+  const GO  nbasal = m_extruded_mesh->layers_data.node.gid->numHorizEntities;
+
+  const int rank = m_comm->getRank();
+  if (rank==0) {
+    *out << "[knownValue] checking basal '" << tag_name << "' tag (" << context << "): "
+         << ncomps << " comps/vertex, expecting neq*nlev = " << neq << "*" << nlev
+         << " = " << neq*nlev << "\n";
+  }
+  if (ncomps != neq*nlev) {
+    *out << "[knownValue] rank " << rank << ": *** tag has " << ncomps
+         << " components, not neq*nlev = " << neq*nlev << "; cannot check slots.\n";
+    return -1;
+  }
+
+  // Counts by failure mode. 'wrong vertex' means the value found belongs to a
+  // DIFFERENT basal column than the vertex it sits on -- data crossed columns.
+  // 'wrong level/eq' means the value belongs to this column but to another
+  // (level,eq) slot -- data stayed in the column but was permuted vertically.
+  long long n_checked=0, n_ok=0, n_wrong_vertex=0, n_wrong_slot=0, n_undecodable=0;
+  int n_shown = 0;
+  const int max_show = 8;
+
+  for (int v=0; v<nverts; ++v) {
+    if (not owned_h[v]) { continue; }
+    const GO g = static_cast<GO>(gids_h[v]);
+    for (int c=0; c<ncomps; ++c) {
+      ++n_checked;
+      const ST val = tag_h[v*ncomps+c];
+      // Decode the value that is actually there.
+      const long long ival = std::llround(val);
+      if (std::abs(val-static_cast<ST>(ival)) > 1e-6 or ival < 0) {
+        ++n_undecodable;
+        if (n_shown<max_show) {
+          ++n_shown;
+          *out << "  [rank " << rank << "] vert gid " << g << " slot " << c
+               << ": value " << val << " is not one of the encoded integers\n";
+        }
+        continue;
+      }
+      const long long got_eq  = ival/1000000;
+      const long long rest    = ival%1000000;
+      const long long got_lev = rest/nbasal;
+      const long long got_g   = rest%nbasal;
+
+      if (got_g != static_cast<long long>(g)) {
+        ++n_wrong_vertex;
+      } else if (got_eq>=neq or got_lev>=nlev) {
+        // Right vertex, but the decoded (eq,level) is not even in range.
+        ++n_wrong_slot;
+      } else {
+        // The value belongs to this vertex. Does the SLOT it sits in agree with the
+        // (level,eq) it encodes? Both candidate packings are accepted here and the
+        // one that holds is reported, since which of the two saveVector produces is
+        // exactly the open question -- what is NOT acceptable is neither holding.
+        const bool layer_major = (c == got_lev*neq + got_eq);
+        const bool comp_major  = (c == got_eq*nlev + got_lev);
+        if (layer_major or comp_major) { ++n_ok; }
+        else                           { ++n_wrong_slot; }
+      }
+
+      if ((got_g!=static_cast<long long>(g) or
+           (c != got_lev*neq+got_eq and c != got_eq*nlev+got_lev))
+          and n_shown<max_show) {
+        ++n_shown;
+        *out << "  [rank " << rank << "] vert gid " << g << " slot " << c
+             << ": value " << val << " decodes to (eq " << got_eq
+             << ", level " << got_lev << ", basal gid " << got_g << ")"
+             << (got_g!=static_cast<long long>(g) ? "  <-- WRONG VERTEX"
+                                                  : "  <-- WRONG SLOT")
+             << " [layer-major slot would be " << (got_lev*neq+got_eq)
+             << ", comp-major " << (got_eq*nlev+got_lev) << "]\n";
+      }
+    }
+  }
+
+  const long long n_bad = n_wrong_vertex + n_wrong_slot + n_undecodable;
+  *out << "[knownValue] rank " << rank << " (" << context << "): checked "
+       << n_checked << " owned slots: " << n_ok << " ok, "
+       << n_wrong_vertex << " wrong vertex, " << n_wrong_slot << " wrong slot, "
+       << n_undecodable << " undecodable\n";
+  if (n_bad==0 and rank==0) {
+    *out << "  => every owned tag slot holds the value its (vertex,level,eq) demands\n";
+  }
+  return static_cast<int>(n_bad);
+#else
+  (void) context;
+  return 0;
+#endif // ALBANY_OMEGAH
 }
 
 Teuchos::RCP<AdaptationData>

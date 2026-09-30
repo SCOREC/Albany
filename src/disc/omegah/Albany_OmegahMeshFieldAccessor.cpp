@@ -4,6 +4,8 @@
 #include "OmegahGhost.hpp"
 #include <Omega_h_map.hpp>
 
+#include <Teuchos_VerboseObject.hpp>
+
 #include <iostream>
 #include <algorithm>
 #include <vector>
@@ -441,6 +443,50 @@ saveVector (const Thyra_Vector&  field_vector,
   const auto isSimplex = (m_mesh->family() == OMEGA_H_SIMPLEX);
   const auto nents_per_elem = isSimplex ? Omega_h::simplex_degree(m_mesh->dim(),dim) :
                                           Omega_h::hypercube_degree(m_mesh->dim(),dim);
+  // DIAGNOSTIC: show which thyra dof each tag slot actually pulls from.
+  // The write below indexes the dof list with offsets[ient], i.e. by the entity's
+  // POSITION IN THE ELEMENT, while the slot it writes is icmp. For a plain field
+  // (one dof per node per component) those two agree. For the extruded solution the
+  // basal dof mgr has neq*(nlev) "components", and whether getGIDFieldOffsets(icmp)
+  // really returns this element's nodes for component icmp -- rather than dofs
+  // belonging to a different level, and hence a different vertex -- is exactly what
+  // is in question. Print, for the first element, the full (icmp,ient)->offset->lid
+  // table plus the entity lids, so the mapping can be read off directly.
+  {
+    static bool printed_once = false;
+    if (not printed_once and field_name=="solution" and ncomps>3) {
+      printed_once = true;
+      auto out = Teuchos::VerboseObjectBase::getDefaultOStream();
+      *out << "[saveVector map] field '" << field_name << "': ncomps=" << ncomps
+           << ", nents_per_elem=" << nents_per_elem
+           << ", elem_dof_lids extent1=" << elem_dof_lids.extent(1)
+           << ", thyra local size=" << thyra_data_h.size() << "\n";
+      const int ielem = 0;
+      *out << "  elem 0 entity lids:";
+      for (int ient=0; ient<nents_per_elem; ++ient) {
+        *out << " ient" << ient << "=vert" << elem_ents_h[ielem*nents_per_elem+ient];
+      }
+      *out << "\n";
+      for (int icmp=0; icmp<ncomps; ++icmp) {
+        const auto& offs = field_dof_mgr->getGIDFieldOffsets(icmp);
+        *out << "  icmp " << icmp << " (" << field_dof_mgr->getFieldString(icmp)
+             << ") offsets.size=" << offs.size() << ":";
+        for (int ient=0; ient<nents_per_elem and ient<static_cast<int>(offs.size()); ++ient) {
+          const auto off = offs[ient];
+          const auto lid = elem_dof_lids(ielem,off);
+          const auto ent = elem_ents_h[ielem*nents_per_elem+ient];
+          *out << " [ient" << ient << " vert" << ent << " off=" << off
+               << " lid=" << lid;
+          if (lid>=0 and lid<static_cast<int>(thyra_data_h.size())) {
+            *out << " val=" << thyra_data_h[lid];
+          }
+          *out << " -> slot " << (ent*ncomps + icmp) << "]";
+        }
+        *out << "\n";
+      }
+    }
+  }
+
   for (int ielem=0; ielem<nelems; ++ielem) {
     for (int icmp=0; icmp<field_dof_mgr->getNumFields(); ++icmp) {
       const auto& offsets = field_dof_mgr->getGIDFieldOffsets(icmp);
