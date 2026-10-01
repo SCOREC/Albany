@@ -670,16 +670,62 @@ checkForAdaptation (const Teuchos::RCP<const Thyra_Vector>& solution ,
     TEUCHOS_TEST_FOR_EXCEPTION (mesh->nents(2)==0, std::runtime_error,
         "Error! At least one process has no mesh elements.\n");
 
+    const bool isNullAdapt = adapt_params.get<bool>("Null Adapt",false);
+    if( !isNullAdapt ) {
 #ifdef ALBANY_MESHFIELDS
-    auto eff_strain_name = adapt_params.get<std::string>("Effective Strain Name","solution_grad_norm");
-    auto effectiveStrain = getEffectiveStrainRate(*mesh,eff_strain_name);
-    auto recoveredStrain = recoverLinearStrain(*mesh, effectiveStrain);
-    mesh->add_tag<Omega_h::Real>(Omega_h::VERT, "recoveredStrain", 1, recoveredStrain,
-        false, Omega_h::ArrayType::VectorND);
+      auto eff_strain_name = adapt_params.get<std::string>("Effective Strain Name","solution_grad_norm");
+      auto effectiveStrain = getEffectiveStrainRate(*mesh,eff_strain_name);
+      auto recoveredStrain = recoverLinearStrain(*mesh, effectiveStrain);
+      mesh->add_tag<Omega_h::Real>(Omega_h::VERT, "recoveredStrain", 1, recoveredStrain,
+          false, Omega_h::ArrayType::VectorND);
+      addEffectiveStrainRateTag(*mesh, effectiveStrain, eff_strain_name);
+
+      const auto MeshDim = 2;
+      const auto ShapeOrder = 1;
+      MeshField::OmegahMeshField<ExecutionSpace,
+        MeshDim,
+        MeshField::KokkosController> omf(*mesh);
+      auto fieldAndController = omf.CreateLagrangeField<Omega_h::Real, ShapeOrder, MeshDim>();
+      auto recoveredStrainField = fieldAndController.field;
+      setFieldAtVertices(*mesh, recoveredStrain, recoveredStrainField);
+
+      auto coordFieldAndController = omf.getCoordField();
+      auto coordField = coordFieldAndController.field;
+      const auto [shp, map] =
+        MeshField::Omegah::getTriangleElement<ShapeOrder>(*mesh);
+      MeshField::FieldElement coordFe(mesh->nelems(), coordField, shp, map);
+
+      const auto adaptRatio = adapt_params.get<double>("Adapt Ratio",0.1);
+      auto estimation =
+        MeshField::SPR::Estimation(*mesh, effectiveStrain, recoveredStrainField, adaptRatio);
+
+      const auto [tgtLength, error] = MeshField::SPR::getSprSizeField(estimation, omf, coordFe);
+      const auto errorThreshold = adapt_params.get<double>("Error Threshold",0.5);
+      const auto verbose = adapt_params.get<bool>("Verbose",false);
+
+      if(verbose) {
+        //FIXME - should this be a per-rank output?
+        //      - does getSprSizeField have a reduction?
+        std::cout << "SPR Computed Error: " << error
+          << " Error Threshold: " << errorThreshold << '\n';
+      }
+      // Under 'Null Adapt' the mesh is left alone, so the SPR error is irrelevant: we
+      // want the rebuild to run on every call regardless of the error.
+      if( error > errorThreshold ) {
+        Omega_h::Write<Omega_h::Real> tgtLength_oh(tgtLength);
+        mesh->add_tag<Omega_h::Real>(Omega_h::VERT, "tgtLength", 1, tgtLength_oh, false,
+            Omega_h::ArrayType::VectorND);
+
+        if(verbose) printTriCount(*mesh, "beforeAdapt");
+        adapt_data->type = AdaptationType::Topology;
+      }
+#endif //ALBANY_MESHFIELDS
+    } else if( isNullAdapt ) {
+      adapt_data->type = AdaptationType::Topology;
+    }
 
     const auto writeVtk = adapt_params.get<bool>("Write VTK Files",false);
     if( writeVtk ) {
-      addEffectiveStrainRateTag(*mesh, effectiveStrain, eff_strain_name);
       const auto outname = std::string("checkForAdaptation") + std::to_string(checkAdaptCount);
       const std::string vtkFileName = outname + ".vtk";
       Omega_h::vtk::write_parallel(vtkFileName, &(*mesh), mesh->dim());
@@ -689,48 +735,7 @@ checkForAdaptation (const Teuchos::RCP<const Thyra_Vector>& solution ,
       }
     }
 
-    const auto MeshDim = 2;
-    const auto ShapeOrder = 1;
-    MeshField::OmegahMeshField<ExecutionSpace,
-                               MeshDim,
-                               MeshField::KokkosController> omf(*mesh);
-    auto fieldAndController = omf.CreateLagrangeField<Omega_h::Real, ShapeOrder, MeshDim>();
-    auto recoveredStrainField = fieldAndController.field;
-    setFieldAtVertices(*mesh, recoveredStrain, recoveredStrainField);
-
-    auto coordFieldAndController = omf.getCoordField();
-    auto coordField = coordFieldAndController.field;
-    const auto [shp, map] =
-      MeshField::Omegah::getTriangleElement<ShapeOrder>(*mesh);
-    MeshField::FieldElement coordFe(mesh->nelems(), coordField, shp, map);
-
-    const auto adaptRatio = adapt_params.get<double>("Adapt Ratio",0.1);
-    auto estimation =
-      MeshField::SPR::Estimation(*mesh, effectiveStrain, recoveredStrainField, adaptRatio);
-
-    const auto [tgtLength, error] = MeshField::SPR::getSprSizeField(estimation, omf, coordFe);
-    const auto errorThreshold = adapt_params.get<double>("Error Threshold",0.5);
-    const auto verbose = adapt_params.get<bool>("Verbose",false);
-
-    if(verbose) {
-      //FIXME - should this be a per-rank output?
-      //      - does getSprSizeField have a reduction?
-      std::cout << "SPR Computed Error: " << error
-                << " Error Threshold: " << errorThreshold << '\n';
-    }
-    // Under 'Null Adapt' the mesh is left alone, so the SPR error is irrelevant: we
-    // want the rebuild to run on every call regardless of the error.
-    if( error > errorThreshold || adapt_params.get<bool>("Null Adapt",false) ) { //trigger adaptation
-      Omega_h::Write<Omega_h::Real> tgtLength_oh(tgtLength);
-      mesh->add_tag<Omega_h::Real>(Omega_h::VERT, "tgtLength", 1, tgtLength_oh, false,
-          Omega_h::ArrayType::VectorND);
-
-
-      if(verbose) printTriCount(*mesh, "beforeAdapt");
-      adapt_data->type = AdaptationType::Topology;
-    }
     return adapt_data;
-#endif //ALBANY_MESHFIELDS
   } else { //meshdim != 1 && meshdim != 2
     if (!mesh->comm()->rank()) {
       std::cout << "Only 1D and 2D (with Meshfields enabled) Omega_h mesh "
