@@ -670,7 +670,10 @@ checkForAdaptationImpl (const Teuchos::RCP<const Thyra_Vector>& solution ,
         "Error! At least one process has no mesh elements.\n");
 
     const bool isNullAdapt = adapt_params.get<bool>("Null Adapt",false);
-    if( !isNullAdapt ) {
+    const bool isRefineOnly = adapt_params.get<bool>("Refine Only",false);
+    if( isNullAdapt || isRefineOnly ) {
+      adapt_data->type = AdaptationType::Topology;
+    } else if( !isNullAdapt ) {
 #ifdef ALBANY_MESHFIELDS
       auto eff_strain_name = adapt_params.get<std::string>("Effective Strain Name","solution_grad_norm");
       auto effectiveStrain = getEffectiveStrainRate(*mesh,eff_strain_name);
@@ -717,8 +720,6 @@ checkForAdaptationImpl (const Teuchos::RCP<const Thyra_Vector>& solution ,
         adapt_data->type = AdaptationType::Topology;
       }
 #endif //ALBANY_MESHFIELDS
-    } else if( isNullAdapt ) {
-      adapt_data->type = AdaptationType::Topology;
     }
 
     const auto writeVtk = adapt_params.get<bool>("Write VTK Files",false);
@@ -828,10 +829,6 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
     }
     opts.xfer_opts.type_map[solution_dof_name()] = OMEGA_H_LINEAR_INTERP;
     opts.xfer_opts.type_map[std::string(solution_dof_name())+"_dot"] = OMEGA_H_LINEAR_INTERP;
-
-    // Transfer the vertex marker stamped before the vtk write above, so that vertices
-    // can be followed across the adaptation. See the note there.
-    opts.xfer_opts.type_map["adapt_probe_id"] = OMEGA_H_LINEAR_INTERP;
 
     if (adapt_params.get<bool>("Null Adapt",false)) {
       // Debug knob: do not touch the mesh at all, but still run everything that follows
