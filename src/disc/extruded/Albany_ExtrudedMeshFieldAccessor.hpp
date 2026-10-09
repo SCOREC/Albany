@@ -135,6 +135,16 @@ public:
                             const std::string&  field_name,
                             const bool          overlapped);
 
+  // Project a 3d solution vector into the layout of the BASAL solution dof manager.
+  // This is the same permutation saveLayeredSolution applies, stopping short of
+  // writing a tag: the result is a vector over m_basal_sol_dof_mgr->ov_vs(), which
+  // is what the basal discretization's own routines (e.g. checkForAdaptation)
+  // expect. Handing them the 3d vector instead silently mis-associates dofs with
+  // basal nodes -- see the note on basal_cmp above.
+  Teuchos::RCP<Thyra_Vector>
+  projectSolutionToBasal (const Thyra_Vector& soln,
+                          const bool          overlapped) const;
+
   // Maps a (3d) element LID to the workset that owns it, and its index within that
   // workset. Needed to scatter values computed from the layered numbering (which is
   // defined over all the elements on the rank) into the per-workset state arrays.

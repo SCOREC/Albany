@@ -305,18 +305,16 @@ forEachColumnDof (const bool overlapped, Func&& f) const
   }
 }
 
-void ExtrudedMeshFieldAccessor::
-saveLayeredSolution (const Thyra_Vector& soln,
-                     const std::string&  field_name,
-                     const bool          overlapped)
+Teuchos::RCP<Thyra_Vector> ExtrudedMeshFieldAccessor::
+projectSolutionToBasal (const Thyra_Vector& soln,
+                        const bool          overlapped) const
 {
   auto soln_data = getLocalData(Teuchos::rcpFromRef(soln));
 
   // Permute the 3d solution into the layout the BASAL solution dof manager expects.
   // That dof mgr has neq*nlev components and Panzer numbers them node-major within a
   // basal element, so its dof for (basal node n, component c) is the one the basal
-  // accessor will write to tag slot c of vertex n. Build a vector in that layout and
-  // the basal accessor's own saveVector does the rest, correctly and unchanged.
+  // accessor will write to tag slot c of vertex n.
   auto basal_soln = Thyra::createMember(m_basal_sol_dof_mgr->ov_vs());
   basal_soln->assign(0.0);
   auto basal_data = getNonconstLocalData(basal_soln);
@@ -331,6 +329,18 @@ saveLayeredSolution (const Thyra_Vector& soln,
       const LO blid = basal_elem_dof_lids(ibelem,boffs[n]);
       if (blid>=0) { basal_data[blid] = soln_data[dof_lid]; }
     });
+
+  return basal_soln;
+}
+
+void ExtrudedMeshFieldAccessor::
+saveLayeredSolution (const Thyra_Vector& soln,
+                     const std::string&  field_name,
+                     const bool          overlapped)
+{
+  // Project into the basal dof mgr's layout; the basal accessor's own saveVector
+  // then does the rest, correctly and unchanged.
+  auto basal_soln = projectSolutionToBasal(soln,overlapped);
 
   m_basal_field_accessor->saveVector(*basal_soln,field_name,m_basal_sol_dof_mgr,true);
 }

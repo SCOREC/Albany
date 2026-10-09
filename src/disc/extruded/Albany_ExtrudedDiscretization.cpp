@@ -421,13 +421,35 @@ checkForAdaptationImpl (const Teuchos::RCP<const Thyra_Vector>& solution,
   auto adapt_data = Teuchos::rcp(new AdaptationData());
   if (adapt_type=="None") {
     return adapt_data;
-  } else {
-    return m_basal_disc->checkForAdaptation(solution,solution_dot,solution_dotdot,dxdp);
   }
-  // We can't just do
-  //  return m_basal_disc->checkForAdaptation(solution,solution_dot,solution_dotdot);
-  // We need to decide WHAT to bass to basal disc: the whole solution or the projection?
-  throw NotYetImplemented("ExtrudedDiscretization::checkForAdaptation");
+
+  // The basal disc knows nothing about columns: it will re-pack whatever vector it is
+  // given into its own solution tag using the BASAL dof manager. Handing it the 3d
+  // vector packs dofs belonging to the other nodes of a basal element into a vertex's
+  // column (see the note on basal_cmp in ExtrudedMeshFieldAccessor), which is both
+  // wrong in the tag it writes -- the one 'Mesh Adaptivity: Write VTK Files' dumps --
+  // and wrong in the error indicator computed from it. Project first, so the basal
+  // disc receives a vector already in its own layout.
+  //
+  // NOTE: projectSolutionToBasal returns a vector over the basal solution dof mgr's
+  //       OVERLAPPED space, which is what the basal accessor's saveVector indexes
+  //       (it uses elem_dof_lids regardless of its 'overlapped' flag; the flag only
+  //       selects which entities it writes, and a sync_tag then fills the ghosts).
+  //       So we walk the full overlapped column set here.
+  auto mfa = m_extruded_mesh->get_extruded_field_accessor();
+  const bool overlapped = true;
+
+  auto basal_solution = mfa->projectSolutionToBasal(*solution,overlapped);
+  Teuchos::RCP<Thyra_Vector> basal_solution_dot, basal_solution_dotdot;
+  if (solution_dot!=Teuchos::null) {
+    basal_solution_dot = mfa->projectSolutionToBasal(*solution_dot,overlapped);
+  }
+  if (solution_dotdot!=Teuchos::null) {
+    basal_solution_dotdot = mfa->projectSolutionToBasal(*solution_dotdot,overlapped);
+  }
+
+  return m_basal_disc->checkForAdaptation(basal_solution,basal_solution_dot,
+                                          basal_solution_dotdot,dxdp);
 }
 
 void ExtrudedDiscretization::
