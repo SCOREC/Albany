@@ -61,8 +61,8 @@ ANONYMOUS:
     Method: Extruded
     Number Of Time Derivatives: 1
     # Exodus Output File Name: output/humboldt_transient.exo
-    Columnwise Ordering: false
-    NumLayers: 1
+    Columnwise Ordering: true
+    NumLayers: 5
     Thickness Field Name: ice_thickness
     #Surface Height Field Name: surface_height
     Use Glimmer Spacing: true
@@ -102,7 +102,7 @@ ANONYMOUS:
         Number Of Time Derivatives: 1
         Mesh Adaptivity:
           Refine Only: true
-          Refine Only Max Length: 0.98
+          Refine Only Max Length: 0.9
           Type: Test
           Write VTK Files: true # write VTK files before and after adaptation
           Verbose: true # write additional mesh adaptation info to stdout
