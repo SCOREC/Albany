@@ -380,6 +380,11 @@ protected:
                           const Teuchos::RCP<const Thyra_Vector>& solution_dotdot,
                           const Teuchos::RCP<const Thyra_MultiVector>& dxdp) = 0;
 
+  // support delegating where the 'Mesh Adaptivity' sublist comes from
+  virtual Teuchos::ParameterList& getAdaptParams () {
+    return m_disc_params->sublist("Mesh Adaptivity");
+  }
+
   // From std::vector<SideSet> build corresponding kokkos structures
   void buildSideSetsViews ();
 

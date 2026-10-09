@@ -129,6 +129,8 @@ public:
 
 protected:
 
+  Teuchos::ParameterList& getAdaptParams () override;
+
   void computeCoordinates();
   void createDOFManagers();
 

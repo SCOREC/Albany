@@ -409,6 +409,19 @@ writeWedgeVtk (const std::string& basename,
   }
 }
 
+Teuchos::ParameterList&
+ExtrudedDiscretization::getAdaptParams ()
+{
+  // the 'basalside' specifies the adapt parameters
+  if (m_disc_params->isSublist("Side Set Discretizations") &&
+      m_disc_params->sublist("Side Set Discretizations").isSublist("basalside")) {
+    return m_disc_params->sublist("Side Set Discretizations")
+                        .sublist("basalside")
+                        .sublist("Mesh Adaptivity");
+  }
+  return m_disc_params->sublist("Mesh Adaptivity");
+}
+
 Teuchos::RCP<AdaptationData>
 ExtrudedDiscretization::
 checkForAdaptationImpl (const Teuchos::RCP<const Thyra_Vector>& solution,
@@ -416,7 +429,7 @@ checkForAdaptationImpl (const Teuchos::RCP<const Thyra_Vector>& solution,
                         const Teuchos::RCP<const Thyra_Vector>& solution_dotdot,
                         const Teuchos::RCP<const Thyra_MultiVector>& dxdp)
 {
-  auto& adapt_params = m_disc_params->sublist("Mesh Adaptivity");
+  auto& adapt_params = getAdaptParams();
   auto adapt_type = adapt_params.get<std::string>("Type","None");
   auto adapt_data = Teuchos::rcp(new AdaptationData());
   if (adapt_type=="None") {

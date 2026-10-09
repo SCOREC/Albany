@@ -600,7 +600,7 @@ checkForAdaptationImpl (const Teuchos::RCP<const Thyra_Vector>& solution ,
   checkAdaptCount++;
   auto adapt_data = Teuchos::rcp(new AdaptationData());
   auto mesh = m_mesh_struct->getOmegahMesh();
-  auto& adapt_params = m_disc_params->sublist("Mesh Adaptivity");
+  auto& adapt_params = getAdaptParams();
   auto adapt_type = adapt_params.get<std::string>("Type","None");
   if (adapt_type=="None") {
     return adapt_data;
@@ -761,7 +761,7 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
   TEUCHOS_TEST_FOR_EXCEPTION (ohMesh->nghost_layers()<1, std::runtime_error,
       "Error! Adaptation requires a ghosted omegah mesh with at least one layer\n");
 
-  auto& adapt_params = m_disc_params->sublist("Mesh Adaptivity");
+  auto& adapt_params = getAdaptParams();
   const auto verbose = adapt_params.get<bool>("Verbose",false);
   const auto writeVtk = adapt_params.get<bool>("Write VTK Files",false);
 
