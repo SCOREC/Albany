@@ -257,7 +257,6 @@ setBulkData(const Teuchos::RCP<const Teuchos_Comm>& comm)
 
   auto& vec_states = m_field_accessor->getMeshVectorStates();
   auto& int_states = m_field_accessor->getMeshScalarIntegerStates();
-  auto& int64_states = m_field_accessor->getMeshScalarInteger64States();
 
   vec_states["layers_dz_ref"] = layers_data.dz_ref;
   vec_states["layers_z_ref"] = layers_data.z_ref;
