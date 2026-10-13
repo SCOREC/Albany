@@ -278,6 +278,11 @@ public:
   //! Get number of total DOFs per node
   int getNumEq() const { return m_neq; }
 
+  //! return true if mesh adaptation is enabled in the input deck
+  bool adaptationEnabled () {
+    return getAdaptParams().get<std::string>("Type","None") != "None";
+  }
+
   // --- Get/set solution/residual/field vectors to/from mesh --- //
   virtual Teuchos::RCP<Thyra_Vector>
   getSolutionField(bool overlapped = false) const = 0;
