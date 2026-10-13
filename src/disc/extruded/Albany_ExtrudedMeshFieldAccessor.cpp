@@ -241,9 +241,9 @@ setLayeredSolutionInfo (const Teuchos::RCP<const LayeredMeshNumbering<LO>>& node
                         const int neq)
 {
   m_node_numbering_lid  = node_numbering_lid;
-  m_basal_node_dof_mgr  = basal_node_dof_mgr;
-  m_basal_sol_dof_mgr   = basal_sol_dof_mgr;
-  m_sol_dof_mgr         = sol_dof_mgr;
+  m_basal_node_dof_mgr  = basal_node_dof_mgr.create_weak();
+  m_basal_sol_dof_mgr   = basal_sol_dof_mgr.create_weak();
+  m_sol_dof_mgr         = sol_dof_mgr.create_weak();
   m_neq                 = neq;
 
   TEUCHOS_TEST_FOR_EXCEPTION (

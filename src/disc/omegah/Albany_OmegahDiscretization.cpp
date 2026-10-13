@@ -163,6 +163,8 @@ updateMesh ()
 {
   // Make sure we don't reuse old dof mgrs (if adapting)
   m_key_to_dof_mgr.clear();
+  m_dof_managers.clear();
+  m_node_dof_managers.clear();
 
   // Create DOF managers
   auto sol_dof_mgr  = create_dof_mgr("",FE_Type::HGRAD,1,m_neq);
