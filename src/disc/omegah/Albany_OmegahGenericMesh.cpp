@@ -848,6 +848,13 @@ loadRequiredInputFields (const Teuchos::RCP<const Teuchos_Comm>& comm,
     // Ok, it's an input (or input-output) field. Find out where the field comes from
     forigin = fparams.get<std::string>("Field Origin","INVALID");
     if (forigin=="Mesh") {
+      const int ent_dim = std::regex_search(ftype,nodal_r) ? 0 : m_mesh->dim();
+      TEUCHOS_TEST_FOR_EXCEPTION (not m_mesh->has_tag(ent_dim,fname), std::runtime_error,
+          "Error! Field '" << fname << "' has 'Field Origin: Mesh', but no such tag "
+          "exists in the mesh.\n"
+          " - field name: " << fname << "\n"
+          " - field type: " << ftype << "\n"
+          " - entity dim: " << ent_dim << "\n");
       *out << "  - Skipping field '" << fname << "' since it's listed as present in the mesh.\n";
       continue;
     } else {
