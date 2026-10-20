@@ -239,6 +239,15 @@ loadOmegahMesh ()
 
   const auto& filename = m_params->get<std::string>("Input Filename");
   Omega_h::binary::read(filename, lib.world(), m_mesh.get());
+
+  if (m_params->get("Restart From Mesh Solution",false)) {
+    const std::string sol_name = "solution";
+    TEUCHOS_TEST_FOR_EXCEPTION (not m_mesh->has_tag(0,sol_name), std::runtime_error,
+        "Error! 'Restart From Mesh Solution' was requested, but the mesh file does "
+        "not contain a nodal '" + sol_name + "' tag.\n"
+        " - mesh file: " + filename + "\n");
+    m_has_restart_solution = true;
+  }
   if (m_params->get("Rebalance",true)) {
     m_mesh->balance(); // re-partition to the number of ranks in world communicator
   }

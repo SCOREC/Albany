@@ -50,7 +50,7 @@ public:
   Teuchos::RCP<AbstractMeshStruct> getMeshStruct() const override { return m_extruded_mesh; }
 
   //! Flag if solution has a restart values -- used in Init Cond
-  bool hasRestartSolution() const override { return false; }
+  bool hasRestartSolution() const override { return m_basal_disc->hasRestartSolution(); }
 
   //! If restarting, convenience function to return restart data time
   double restartDataTime() const override { return -1.0; }
