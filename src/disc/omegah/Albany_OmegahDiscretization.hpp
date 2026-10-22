@@ -89,6 +89,10 @@ public:
   // unpacking into per level tags for vtk output.
   void setSolutionLevels (const int neq_per_level, const int nlev);
 
+  void setSolutionComponents (const std::vector<std::pair<std::string,int>>& comps) override {
+    m_solution_components = comps;
+  }
+
   // --- Get/set solution/residual/field vectors to/from mesh --- //
   Teuchos::RCP<Thyra_Vector>
   getSolutionField(bool /* overlapped */ = false) const override {
@@ -156,25 +160,27 @@ protected:
   void computeNodeSets ();
   void computeGraphs ();
 
-  // Unpack the 'solution' tag into per level tags by component (e.g., velocity,
-  // thickness, etc.), named <field>_level<ilev>. No-op unless setSolutionLevels
-  // was called. removeSolutionLevelTags drops them once the file is written.
-  void addSolutionLevelTags ();
+  // Write the mesh to vtk. If setSolutionLevels was called, the 'solution' tag is
+  // unpacked into per level tags by component (e.g., Velocity, ice_thickness_change),
+  // named <field>_level<ilev>, and the vtk file omits the packed 'solution' tag. The
+  // mesh tags are unchanged on return.
+  void writeVtkFile (const std::string& filename, const int cell_dim);
+
+  // Component grouping within one level of the 'solution' tag, in component order.
+  // Taken from setSolutionComponents if they cover a level, else one cmp<k> per component.
+  std::vector<std::pair<std::string,int>> solutionLevelFields () const;
+
+  // Return true if the per level tags were added.
+  bool addSolutionLevelTags ();
   void removeSolutionLevelTags ();
-
-  // Component grouping within one level, in component order.
-  struct SolutionLevelField {
-    std::string name;
-    int         ncomps;
-  };
-  std::vector<SolutionLevelField> solutionLevelFields () const;
-
-  int m_neq_per_level = -1;
-  int m_num_levels = -1;
 
   // ======================= Members ======================= //
 
   Teuchos::RCP<OmegahGenericMesh> m_mesh_struct;
+
+  std::vector<std::pair<std::string,int>> m_solution_components;
+  int m_neq_per_level = -1;
+  int m_num_levels    = -1;
 
   // TODO: move stuff below in base class?
   Teuchos::RCP<const Teuchos_Comm> m_comm;

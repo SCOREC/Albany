@@ -456,9 +456,9 @@ addVertexTagSlice (const std::string& src_name,
   TEUCHOS_TEST_FOR_EXCEPTION (not m_mesh->has_tag(0,src_name), std::runtime_error,
       "Error! Cannot slice tag '" + src_name + "': no such tag on mesh vertices.\n");
 
-  auto src_tag = m_mesh->get_tag<ST>(0,src_name);
-  TEUCHOS_TEST_FOR_EXCEPTION (src_tag==nullptr, std::runtime_error,
+  TEUCHOS_TEST_FOR_EXCEPTION (not Omega_h::is<ST>(m_mesh->get_tagbase(0,src_name)), std::runtime_error,
       "Error! Tag '" + src_name + "' is not of real (double) type.\n");
+  auto src_tag = m_mesh->get_tag<ST>(0,src_name);
 
   const int src_ncomps = src_tag->ncomps();
   TEUCHOS_TEST_FOR_EXCEPTION (first_cmp<0 || ncomps<1 || first_cmp+ncomps>src_ncomps,

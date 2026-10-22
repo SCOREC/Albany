@@ -9,6 +9,8 @@
 
 #include "Teuchos_CompilerCodeTweakMacros.hpp"
 
+#include <algorithm>
+
 namespace LandIce {
 
 StokesFOBase::
@@ -122,6 +124,22 @@ StokesFOBase (const Teuchos::RCP<Teuchos::ParameterList>& params_,
     computeConstantModes = true;
     computeRotationModes = false;
   }
+}
+
+std::vector<std::pair<std::string,int>> StokesFOBase::getSolutionComponents() const
+{
+  std::vector<std::pair<int,std::string>> by_offset;
+  for (int i=0; i<dof_names.size(); ++i) {
+    by_offset.emplace_back(dof_offsets[i],dof_names[i]);
+  }
+  std::sort(by_offset.begin(),by_offset.end());
+
+  std::vector<std::pair<std::string,int>> comps;
+  for (std::size_t i=0; i<by_offset.size(); ++i) {
+    const int end = i+1<by_offset.size() ? by_offset[i+1].first : static_cast<int>(neq);
+    comps.emplace_back(by_offset[i].second, end-by_offset[i].first);
+  }
+  return comps;
 }
 
 void StokesFOBase::buildProblem (Teuchos::ArrayRCP<Teuchos::RCP<Albany::MeshSpecsStruct> >  meshSpecs,
