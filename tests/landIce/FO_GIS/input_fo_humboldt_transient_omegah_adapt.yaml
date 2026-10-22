@@ -107,7 +107,7 @@ ANONYMOUS:
           #   Increasing it results in larger mesh elements;
           #   this is a (nonlinear) scaling factor on the resulting
           #   size field.
-          Adapt Ratio: 1.2
+          Adapt Ratio: 0.007
           # Error Thresold:
           #  SPR computes the sum of error norms raised to the power
           #  (2d/(2p+d)) over all elements, where d is the mesh
@@ -117,8 +117,8 @@ ANONYMOUS:
           #  before mesh adaptation is triggered;
           #  i.e., `if (error > threshold) runMeshAdaptation(...)` .
           Error Threshold: 0.3
-          Minimum Edge Length: 3.0 # min desired edge length in physical space
-          Maximum Edge Length: 8.0 # max desired edge length in physical space
+          Minimum Edge Length: 1.5 # min desired edge length in physical space
+          Maximum Edge Length: 40.0 # max desired edge length in physical space
           Write VTK Files: true # write VTK files before and after adaptation
           Verbose: true # write additional mesh adaptation info to stdout
           Effective Strain Name: sliding_velocity
