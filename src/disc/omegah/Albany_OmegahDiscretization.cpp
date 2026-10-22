@@ -508,6 +508,64 @@ void OmegahDiscretization::setNumEq (int neq)
   m_neq = neq;
 }
 
+void OmegahDiscretization::
+setSolutionLevels (const int neq_per_level, const int nlev)
+{
+  TEUCHOS_TEST_FOR_EXCEPTION (neq_per_level*nlev != m_neq, std::logic_error,
+      "Error! The per level component count must add up to neq.\n"
+      "  - neq_per_level: " << neq_per_level << "\n"
+      "  - nlev: " << nlev << "\n"
+      "  - neq: " << m_neq << "\n");
+  m_neq_per_level = neq_per_level;
+  m_num_levels    = nlev;
+}
+
+std::vector<OmegahDiscretization::SolutionLevelField>
+OmegahDiscretization::solutionLevelFields () const
+{
+  // The solution dof managers name their components 'cmp i', so the physics
+  // grouping is not recoverable from them. Only the LandIce StokesFOThickness
+  // layout (velX,velY,thickness) is unpacked; anything else is left packed.
+  if (m_neq_per_level==3) {
+    return { {"velocity",2}, {"thickness",1} };
+  }
+  return {};
+}
+
+void OmegahDiscretization::addSolutionLevelTags ()
+{
+  const auto fields = solutionLevelFields();
+  if (fields.empty()) { return; }
+
+  auto mfa = Teuchos::rcp_dynamic_cast<OmegahMeshFieldAccessor>(m_solution_mfa);
+  if (mfa.is_null()) { return; }
+
+  for (int ilev=0; ilev<m_num_levels; ++ilev) {
+    int cmp = ilev*m_neq_per_level;
+    for (const auto& f : fields) {
+      mfa->addVertexTagSlice(solution_dof_name(),
+                             f.name + "_level" + std::to_string(ilev),
+                             cmp, f.ncomps);
+      cmp += f.ncomps;
+    }
+  }
+}
+
+void OmegahDiscretization::removeSolutionLevelTags ()
+{
+  const auto fields = solutionLevelFields();
+  if (fields.empty()) { return; }
+
+  auto mfa = Teuchos::rcp_dynamic_cast<OmegahMeshFieldAccessor>(m_solution_mfa);
+  if (mfa.is_null()) { return; }
+
+  for (int ilev=0; ilev<m_num_levels; ++ilev) {
+    for (const auto& f : fields) {
+      mfa->removeVertexTag(f.name + "_level" + std::to_string(ilev));
+    }
+  }
+}
+
 void
 OmegahDiscretization::
 getSolutionMV (Thyra_MultiVector& solution, bool /* overlapped */) const
@@ -737,11 +795,13 @@ checkForAdaptationImpl (const Teuchos::RCP<const Thyra_Vector>& solution ,
     if( writeVtk ) {
       const auto outname = std::string("checkForAdaptation") + std::to_string(checkAdaptCount);
       const std::string vtkFileName = outname + ".vtk";
+      addSolutionLevelTags();
       Omega_h::vtk::write_parallel(vtkFileName, &(*mesh), mesh->dim());
       if (mesh->dim() == 2) {
         const std::string vtkFileName_edges = outname + "_edges.vtk";
         Omega_h::vtk::write_parallel(vtkFileName_edges, &(*mesh), Omega_h::EDGE);
       }
+      removeSolutionLevelTags();
     }
 
     return adapt_data;
@@ -784,11 +844,13 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
     }
     const auto outname = std::string("before_adapt") + std::to_string(adaptCount);
     const std::string vtkFileName = outname + ".vtk";
+    addSolutionLevelTags();
     Omega_h::vtk::write_parallel(vtkFileName, &(*ohMesh), ohMesh->dim());
     if (ohMesh->dim() == 2) {
       const std::string vtkFileName_edges = outname + "_edges.vtk";
       Omega_h::vtk::write_parallel(vtkFileName_edges, &(*ohMesh), Omega_h::EDGE);
     }
+    removeSolutionLevelTags();
   }
 
   if (ohMesh->dim() == 1) {
@@ -885,7 +947,9 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
 
   if( writeVtk ) {
     std::string afterAdaptName = "after_adapt" + std::to_string(adaptCount) + ".vtk";
+    addSolutionLevelTags();
     Omega_h::vtk::write_parallel(afterAdaptName, ohMesh.get());
+    removeSolutionLevelTags();
     std::string afterAdaptNameOsh = "after_adapt" + std::to_string(adaptCount) + ".osh";
     Omega_h::binary::write(afterAdaptNameOsh, ohMesh.get());
   }
@@ -910,7 +974,9 @@ adapt (const Teuchos::RCP<AdaptationData>& adaptData)
     // 'after_adapt' file above is written before createNodeSets/createSideSets run,
     // so those tags are necessarily missing from it.
     std::string name = "after_adapt_sets" + std::to_string(adaptCount) + ".vtk";
+    addSolutionLevelTags();
     Omega_h::vtk::write_parallel(name, ohMesh.get());
+    removeSolutionLevelTags();
   }
 
   auto omegah_mfa = Teuchos::rcp_dynamic_cast<OmegahMeshFieldAccessor>(m_mesh_struct->get_field_accessor());
@@ -1009,11 +1075,13 @@ writeMeshDatabaseToFile (const double time,
       *out << " to file " << vtkFileName << std::endl;
     }
     const auto mesh = m_mesh_struct->getOmegahMesh();
+    addSolutionLevelTags();
     Omega_h::vtk::write_parallel(vtkFileName, &(*mesh), mesh->dim());
     if (mesh->dim() == 2) {
       const std::string vtkFileName_edges = outname + "_edges.vtk";
       Omega_h::vtk::write_parallel(vtkFileName_edges, &(*mesh), Omega_h::EDGE);
     }
+    removeSolutionLevelTags();
   }
   outputInterval++;
 #endif

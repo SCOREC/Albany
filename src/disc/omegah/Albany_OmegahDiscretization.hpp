@@ -13,6 +13,9 @@
 
 #include "Albany_NullSpaceUtils.hpp"
 
+#include <string>
+#include <vector>
+
 namespace Albany {
 
 class OmegahDiscretization : public AbstractDiscretization
@@ -81,6 +84,11 @@ public:
 
   void setNumEq (int neq) override;
 
+  // Called by ExtrudedDiscretization: the 'solution' tag on this (basal) mesh holds
+  // a whole column per vertex, as nlev groups of neq_per_level components. Enables
+  // unpacking into per level tags for vtk output.
+  void setSolutionLevels (const int neq_per_level, const int nlev);
+
   // --- Get/set solution/residual/field vectors to/from mesh --- //
   Teuchos::RCP<Thyra_Vector>
   getSolutionField(bool /* overlapped */ = false) const override {
@@ -147,6 +155,22 @@ protected:
   void computeSideSets ();
   void computeNodeSets ();
   void computeGraphs ();
+
+  // Unpack the 'solution' tag into per level tags by component (e.g., velocity,
+  // thickness, etc.), named <field>_level<ilev>. No-op unless setSolutionLevels
+  // was called. removeSolutionLevelTags drops them once the file is written.
+  void addSolutionLevelTags ();
+  void removeSolutionLevelTags ();
+
+  // Component grouping within one level, in component order.
+  struct SolutionLevelField {
+    std::string name;
+    int         ncomps;
+  };
+  std::vector<SolutionLevelField> solutionLevelFields () const;
+
+  int m_neq_per_level = -1;
+  int m_num_levels = -1;
 
   // ======================= Members ======================= //
 

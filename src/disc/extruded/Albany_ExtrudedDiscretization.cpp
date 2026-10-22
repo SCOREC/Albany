@@ -15,6 +15,10 @@
 #include "Albany_GlobalLocalIndexer.hpp"
 #include "Albany_CombineAndScatterManager.hpp"
 
+#ifdef ALBANY_OMEGAH
+#include "Albany_OmegahDiscretization.hpp"
+#endif
+
 #include <limits>
 #include <vector>
 #include <algorithm>
@@ -61,9 +65,19 @@ void ExtrudedDiscretization::setNumEq (int neq)
 {
   m_neq = neq;
 
-  // On the basal mesh, make the solution vector numNodeLayers times longer
-  int basal_neq = neq * m_extruded_mesh->layers_data.node.gid->numLayers;
+  // On the basal mesh, make the solution vector numNodeLayers times longer.
+  // The node numbering's numLayers is the number of node levels, num_layers+1.
+  const int nlev = m_extruded_mesh->layers_data.node.gid->numLayers;
+  int basal_neq = neq * nlev;
   m_basal_disc->setNumEq(basal_neq);
+
+#ifdef ALBANY_OMEGAH
+  // Let the basal disc unpack the per-column 'solution' tag for vtk output
+  auto omegah_basal = Teuchos::rcp_dynamic_cast<OmegahDiscretization>(m_basal_disc);
+  if (not omegah_basal.is_null()) {
+    omegah_basal->setSolutionLevels(neq,nlev);
+  }
+#endif
 }
 
 void
