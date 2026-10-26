@@ -59,8 +59,9 @@ namespace {
     return mesh.sync_array<Omega_h::Real>(mesh.dim(), reordered, 1);
   }
 
-  void addEffectiveStrainRateTag(Omega_h::Mesh &mesh, Omega_h::Reals effectiveStrainRate) {
-    const auto tagName = std::string("effectiveStrainRate");
+  void addEffectiveStrainRateTag(Omega_h::Mesh &mesh,
+                                 Omega_h::Reals effectiveStrainRate,
+                                 const std::string& tagName) {
     auto synced = mesh.sync_array<Omega_h::Real>(mesh.dim(), effectiveStrainRate, 1);
     if( mesh.has_tag(mesh.dim(), tagName) ) {
       mesh.set_tag<Omega_h::Real>(mesh.dim(), tagName, synced);
@@ -780,19 +781,15 @@ checkForAdaptationImpl (const Teuchos::RCP<const Thyra_Vector>& solution ,
       adapt_data->type = AdaptationType::Topology;
     } else {
 #ifdef ALBANY_MESHFIELDS
-    TEUCHOS_TEST_FOR_EXCEPTION (not adapt_params.isParameter("Indicator Field Name"), std::runtime_error,
-        "Error! SPR adaptation requires 'Indicator Field Name' in the 'Mesh Adaptivity' sublist.\n"
-        "  - This is the name of the Elem Scalar field driving the adaptation.\n");
-    const auto& indicator_name = adapt_params.get<std::string>("Indicator Field Name");
-    auto effectiveStrain = getIndicatorField(*mesh, indicator_name);
-    auto recoveredStrain = recoverLinearStrain(*mesh, effectiveStrain);
-    mesh->add_tag<Omega_h::Real>(Omega_h::VERT, "recoveredStrain", 1, recoveredStrain,
-        false, Omega_h::ArrayType::VectorND);
-
+      TEUCHOS_TEST_FOR_EXCEPTION (not adapt_params.isParameter("Indicator Field Name"), std::runtime_error,
+          "Error! SPR adaptation requires 'Indicator Field Name' in the 'Mesh Adaptivity' sublist.\n"
+          "  - This is the name of the Elem Scalar field driving the adaptation.\n");
+      const auto& indicator_name = adapt_params.get<std::string>("Indicator Field Name");
+      auto effectiveStrain = getIndicatorField(*mesh, indicator_name);
       auto recoveredStrain = recoverLinearStrain(*mesh, effectiveStrain);
       mesh->add_tag<Omega_h::Real>(Omega_h::VERT, "recoveredStrain", 1, recoveredStrain,
           false, Omega_h::ArrayType::VectorND);
-      addEffectiveStrainRateTag(*mesh, effectiveStrain, eff_strain_name);
+      addEffectiveStrainRateTag(*mesh, effectiveStrain, indicator_name);
 
       const auto MeshDim = 2;
       const auto ShapeOrder = 1;
