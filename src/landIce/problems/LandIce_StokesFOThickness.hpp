@@ -112,12 +112,24 @@ protected:
                                      const Albany::MeshSpecsStruct& meshSpecs,
                                      Albany::FieldManagerChoice fmchoice);
 
+  // Names of the distributed parameters extruded from one level of the mesh
+  Teuchos::Array<std::string> getExtrudedParamNames () const {
+    Teuchos::Array<std::string> names;
+    for (const auto& it : is_extruded_param) {
+      if (it.second) {
+        names.push_back(it.first);
+      }
+    }
+    return names;
+  }
+
   void constructDirichletEvaluators(const Albany::MeshSpecsStruct& meshSpecs);
   void constructNeumannEvaluators(const Teuchos::RCP<Albany::MeshSpecsStruct>& meshSpecs);
 
   void setFieldsProperties ();
 
   std::string initial_ice_thickness_name;
+  std::string thickness_forcing_name;
   std::string lateralSideName;
 
   bool unsteady;
@@ -168,6 +180,7 @@ StokesFOThickness::constructEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& f
   p->set<int>("Field Level", discParams->get<int>("NumLayers"));
   p->set<int>("Offset of First DOF", dof_offsets[0]); 
   p->set<int>("Offset 2D Field", dof_offsets[1]); 
+  p->set<Teuchos::Array<std::string>>("Extruded Param Names", getExtrudedParamNames());
 
   //Output
   p->set<std::string>("Scatter Field Name", scatter_names[0]);
@@ -270,7 +283,7 @@ void StokesFOThickness::constructThicknessEvaluators (PHX::FieldManager<PHAL::Al
   p->set<Teuchos::RCP<const Albany::MeshSpecsStruct> >("Mesh Specs Struct", Teuchos::rcpFromRef(meshSpecs));
   p->set<std::string>("Averaged Velocity Variable Name", "Averaged Velocity");
   p->set<std::string>("Lateral Side Set Name", lateralSideName);
-  p->set<std::string>("Forcing Name", "thickness_forcing");
+  p->set<std::string>("Forcing Name", thickness_forcing_name);
   p->set<std::string>("Stabilization", this->params->get<std::string>("Thickness Stabilization", "None"));
   p->set<bool>("Lump Mass Matrix", this->params->get<bool>("Lump Time Derivative Mass Matrix", false));
 
@@ -333,6 +346,7 @@ void StokesFOThickness::constructThicknessEvaluators (PHX::FieldManager<PHAL::Al
   p->set<std::string>("Mesh Part", surfaceSideName);
   p->set<int>("Offset of First DOF", dof_offsets[1]);
   p->set<Teuchos::RCP<const shards::CellTopology> >("Cell Topology",cellType);
+  p->set<Teuchos::Array<std::string>>("Extruded Param Names", getExtrudedParamNames());
 
   //Output
   p->set<std::string>("Scatter Field Name", scatter_names[1]);

@@ -63,7 +63,7 @@ if (ALBANY_TRILINOS_DIR)
 endif()
 message ("-- Looking for trilinos installation ...")
 message ("     ALBANY_TRILINOS_DIR: ${ALBANY_TRILINOS_DIR}") 
-find_package(Trilinos 17.1 REQUIRED)
+find_package(Trilinos REQUIRED)
 message("-- Looking for trilinos installation ... Found.\n")
 
 # Trilinos_BIN_DIRS probably should be defined in the Trilinos config. Until it is, set it here.
@@ -379,6 +379,27 @@ ELSE()
   MESSAGE("-- Looking for ROL ...                       NOT Found.")
   SET(ALBANY_ROL FALSE)
 ENDIF()
+
+
+# HDSA (Hyper-Differential Sensitivity Analysis), provided by Piro through HdsaLib.
+SET (DEFAULT_HDSA OFF)
+IF (Piro_ENABLE_HdsaLib AND Piro_ENABLE_ROL)
+  SET (DEFAULT_HDSA ON)
+ENDIF()
+
+OPTION (ENABLE_HDSA "Whether to enable HDSA analysis in Albany" ${DEFAULT_HDSA})
+IF (ENABLE_HDSA)
+  IF (Piro_ENABLE_HdsaLib AND Piro_ENABLE_ROL)
+    MESSAGE("-- HDSA ...                                    Enabled.")
+    SET(ALBANY_HDSA TRUE)
+  ELSE()
+    MESSAGE (FATAL_ERROR "User manually enabled HDSA support, but Piro does not support it")
+  ENDIF()
+ELSE()
+  MESSAGE("-- HDSA ...                                NOT Enabled.")
+  SET(ALBANY_HDSA FALSE)
+ENDIF()
+
 
 # Check if Trilinos has DTK
 LIST(FIND Trilinos_PACKAGE_LIST DataTransferKit DataTransferKit_List_ID)

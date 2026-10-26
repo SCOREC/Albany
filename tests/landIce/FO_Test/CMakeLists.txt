@@ -4,6 +4,18 @@ get_filename_component(parentDirName ${parentPath} NAME)
 get_filename_component(dirName ${CMAKE_CURRENT_SOURCE_DIR} NAME)
 set (testNameRoot ${parentDirName}_${dirName})
 
+# This variable will be set in the input files during the 'configure_file' call
+if (ALBANY_PARALLEL_EXODUS)
+  set (USE_SERIAL_MESH "true")
+else ()
+  # If there's no Iopx, we *must* have ALBANY_DECOMP defined (to decompose the mesh)
+  # OR execute with only one rank.
+  IF (NOT ${ALBANY_SEACAS_PATH})
+    MESSAGE (FATAL_ERROR "Error! Cannot execute some FO_Test tests in parallel without Iopx or decomp from Trilinos.\n")
+  ENDIF()
+ set (USE_SERIAL_MESH "false")
+endif()
+
 ####################################
 ###        FO dome tests         ###
 ####################################
@@ -100,11 +112,19 @@ if (NOT ALBANY_PARALLEL_EXODUS)
 endif()
 
 IF(NOT Kokkos_ENABLE_CUDA)
-  set (testName ${testNameRoot}_MIMSIP_Transient_Impl)
-  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_mismip_transient.yaml
-                  ${CMAKE_CURRENT_BINARY_DIR}/input_mismip_transient.yaml)
-  add_test(${testName} ${Albany.exe} input_mismip_transient.yaml)
-  set_tests_properties(${testName}  PROPERTIES LABELS "LandIce;Forward;Implcit" FIXTURES_REQUIRED MismipMeshSetup2d)
+  if (ALBANY_MESH_DEPENDS_ON_SOLUTION)
+    set (testName ${testNameRoot}_MIMSIP_Transient_Sensitivity_Impl)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_mismip_transient_sensitivity.yaml
+                    ${CMAKE_CURRENT_BINARY_DIR}/input_mismip_transient_sensitivity.yaml)
+    add_test(${testName} ${Albany.exe} input_mismip_transient_sensitivity.yaml)
+    set_tests_properties(${testName}  PROPERTIES LABELS "LandIce;Forward;Implcit" FIXTURES_REQUIRED MismipMeshSetup2d)
+  else()
+    set (testName ${testNameRoot}_MIMSIP_Transient_Impl)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_mismip_transient.yaml
+                    ${CMAKE_CURRENT_BINARY_DIR}/input_mismip_transient.yaml)
+    add_test(${testName} ${Albany.exe} input_mismip_transient.yaml)
+    set_tests_properties(${testName}  PROPERTIES LABELS "LandIce;Forward;Implcit" FIXTURES_REQUIRED MismipMeshSetup2d)
+  endif()
 
   set (testName ${testNameRoot}_MIMSIP_Transient_2d_Impl)
   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_mismip_transient_2d.yaml
@@ -118,3 +138,36 @@ IF(NOT Kokkos_ENABLE_CUDA)
   add_test(${testName} ${Albany.exe} input_mismip_transient_expl.yaml)
   set_tests_properties(${testName}  PROPERTIES LABELS "LandIce;Forward;Explicit" FIXTURES_REQUIRED MismipMeshSetup2d)
 ENDIF()
+
+
+
+######################
+###   HDSA tests   ###
+######################
+
+if (ALBANY_HDSA AND ALBANY_IFPACK2)
+  set (testName ${testNameRoot}_HDSA_Piro)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_hdsa_piro.yaml
+                 ${CMAKE_CURRENT_BINARY_DIR}/input_hdsa_piro.yaml)
+  add_test(${testName} ${AlbanyAnalysis.exe} input_hdsa_piro.yaml)
+  set_tests_properties(${testName} PROPERTIES LABELS "LandIce")
+
+  set (testName ${testNameRoot}_HDSA_AdvDiff)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_hdsa_advDiff.yaml
+                 ${CMAKE_CURRENT_BINARY_DIR}/input_hdsa_advDiff.yaml)
+  add_test(${testName} ${AlbanyAnalysis.exe} input_hdsa_advDiff.yaml)
+  set_tests_properties(${testName} PROPERTIES LABELS "LandIce")
+
+  set (testName ${testNameRoot}_HDSA_AdvDiff_vec)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_hdsa_advDiff_vec.yaml
+                 ${CMAKE_CURRENT_BINARY_DIR}/input_hdsa_advDiff_vec.yaml)
+  add_test(${testName} ${AlbanyAnalysis.exe} input_hdsa_advDiff_vec.yaml)
+  set_tests_properties(${testName} PROPERTIES LABELS "LandIce")
+
+  set (testName ${testNameRoot}_HDSA_AdvDiff3D_vec)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_hdsa_advDiff3D_vec.yaml
+                 ${CMAKE_CURRENT_BINARY_DIR}/input_hdsa_advDiff3D_vec.yaml)
+  add_test(${testName} ${AlbanyAnalysis.exe} input_hdsa_advDiff3D_vec.yaml)
+  set_tests_properties(${testName} PROPERTIES LABELS "LandIce")
+
+endif()

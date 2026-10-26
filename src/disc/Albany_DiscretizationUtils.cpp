@@ -148,13 +148,26 @@ readScalarFileSerial (const std::string& fname,
         "  - file name: " << fname << "\n");
 
   GO numNodes;
-  ifile >> numNodes;
+  std::string line;
+  std::getline(ifile, line);
+  std::istringstream iss(line);
+  iss >> numNodes;
   TEUCHOS_TEST_FOR_EXCEPTION (numNodes != nonConstData.size(),
       Teuchos::Exceptions::InvalidParameterValue,
       "[readScalarFileSerial] Error! Unexpected number of nodes.\n"
       "  - file name: " << fname << "\n"
       "  - number of nodes in file: " << numNodes << "\n"
       "  - expected number of nodes: " << nonConstData.size() << "\n");
+
+  // If number of components is available, it needs to be 1 for scalar fields
+  int numComponents;
+  if(iss >> numComponents)
+    TEUCHOS_TEST_FOR_EXCEPTION (numComponents != 1,
+      Teuchos::Exceptions::InvalidParameterValue,
+      "[readScalarFileSerial] Error! Unexpected number of components.\n"
+      "  - file name: " << fname << "\n"
+      "  - number of components: " << numComponents << "\n"
+      "  - expected number of components: 1\n");
 
   for (GO i = 0; i < numNodes; i++) {
     ifile >> nonConstData[i];
@@ -600,7 +613,7 @@ computeField (const std::string& field_name,
   // Extract coordinates of all nodes
   auto field_mv = Thyra::createMembers(entities_vs,field_dim);
 
-  using exec_space = PHX::Device::execution_space;
+  using exec_space = PHX::ExecutionSpace;
   using layout = typename Kokkos::View<double**,DeviceView1d<double>::memory_space>::traits::array_layout;
 
   // Set up the expression parser

@@ -69,6 +69,20 @@ StokesFOBase (const Teuchos::RCP<Teuchos::ParameterList>& params_,
 
   compute_dissipation = params->sublist("LandIce Viscosity").get("Extract Strain Rate Sq", false);
 
+  // If mesh adaptation is enabled, make sure the disc knows which field drives it.
+  // Unless the user picked one, we use the effective strain rate (computed by this problem)
+  effective_strain_rate_name = "effective_strain_rate";
+  if (discParams->isSublist("Mesh Adaptivity")) {
+    auto& adapt_pl = discParams->sublist("Mesh Adaptivity");
+    adapt_enabled = adapt_pl.get<std::string>("Type","None")!="None";
+    if (adapt_enabled) {
+      if (not adapt_pl.isParameter("Indicator Field Name")) {
+        adapt_pl.set<std::string>("Indicator Field Name",effective_strain_rate_name);
+      }
+      adapt_indicator_name = adapt_pl.get<std::string>("Indicator Field Name");
+    }
+  }
+
   if (!physics_list.isParameter("Atmospheric Pressure Melting Temperature")) {
     physics_list.set("Atmospheric Pressure Melting Temperature", 273.15);
   }
@@ -404,8 +418,24 @@ void StokesFOBase::parseInputFields ()
       param_name = param_list.get<std::string>("Name");
       dist_params_name_to_mesh_part[param_name] = param_list.get<std::string>("Mesh Part","");
       is_extruded_param[param_name] = param_list.get<bool>("Extruded",false);
-      int extruded_param_level = param_list.get<int>("Extruded Param Level",0);
-      extruded_params_levels.insert(std::make_pair(param_name, extruded_param_level));
+      if (is_extruded_param[param_name]) {
+        // Level of the extruded mesh where the parameter is defined. Only the extruded parameters
+        // are in this map: its users (the gather of the parameter, and the residual and response
+        // scatters with extruded params) map the parameter of all the nodes of a column to its
+        // dof at this level. The other parameters are gathered and scattered node by node.
+        extruded_params_levels[param_name] = param_list.get<int>("Extruded Param Level",0);
+
+        // The parameter must have dofs at its level: "bottom" is level 0, "top" is level NumLayers
+        const auto& mesh_part = dist_params_name_to_mesh_part[param_name];
+        const int level = extruded_params_levels[param_name];
+        const int num_layers = discParams->isType<int>("NumLayers") ? discParams->get<int>("NumLayers") : -1;
+        TEUCHOS_TEST_FOR_EXCEPTION (
+            (mesh_part=="bottom" && level!=0) || (mesh_part=="top" && level!=num_layers),
+            std::logic_error,
+            "Error! The extruded parameter " << param_name << " is defined on mesh part \""
+            << mesh_part << "\" but has \"Extruded Param Level\" = " << level << ".\n"
+            "       Use level 0 for \"bottom\" and level NumLayers for \"top\".\n");
+      }
       save_sensitivities[param_name]=param_list.get<bool>("Save Sensitivity",false);
       is_dist_param[param_name] = true;
       is_input_field[param_name] = true;
@@ -439,6 +469,7 @@ void StokesFOBase::parseInputFields ()
   std::string fieldType, fieldUsage, meshPart;
   FRT rank;
   FL loc;
+  bool found_adapt_indicator = false;
 
   for (int ifield=0; ifield<num_fields; ++ifield) {
     Teuchos::ParameterList& thisFieldList = req_fields_info.sublist(util::strint("Field", ifield));
@@ -504,6 +535,22 @@ void StokesFOBase::parseInputFields ()
     if (loc==FL::Cell && !is_input_field[stateName]) {
       build_interp_ev[stateName][IReq::CELL_VAL] = true;
     }
+
+    if (adapt_enabled && stateName==adapt_indicator_name) {
+      TEUCHOS_TEST_FOR_EXCEPTION (loc!=FL::Cell || rank!=FRT::Scalar, std::logic_error,
+          "Error! The adaptation indicator field '" + stateName + "' must be an Elem Scalar field.\n");
+      found_adapt_indicator = true;
+    }
+  }
+
+  // If adaptation is on, the indicator field must be either one of the required fields,
+  // or the effective strain rate, which we compute
+  if (adapt_enabled && !found_adapt_indicator) {
+    TEUCHOS_TEST_FOR_EXCEPTION (adapt_indicator_name!=effective_strain_rate_name, std::logic_error,
+        "Error! Invalid adaptation indicator field name.\n"
+        "  - Indicator Field Name: " + adapt_indicator_name + "\n"
+        "  - Valid choices: '" + effective_strain_rate_name + "', or an Elem Scalar field in 'Required Fields Info'.\n");
+    compute_adapt_indicator = true;
   }
 
   // Side set requirements

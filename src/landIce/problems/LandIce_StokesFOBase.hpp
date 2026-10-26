@@ -263,6 +263,14 @@ protected:
   bool viscosity_use_p0_temperature;
   bool compute_dissipation;
 
+  // Mesh adaptation: if enabled, the disc needs an Elem Scalar indicator field
+  // to drive it. Unless the user picks an existing mesh field, we compute the
+  // effective strain rate and save it as a state.
+  bool adapt_enabled = false;
+  bool compute_adapt_indicator = false;
+  std::string adapt_indicator_name;
+  std::string effective_strain_rate_name;
+
   //if true, and the effective_pressure is not an input field,
   //  the effective pressure is computed by the BasalFriction Evaluator.
   //  Alternatively it's computed using the EffectivePressure Evaluator.
@@ -293,6 +301,12 @@ protected:
   StrMap<bool>  is_dist_param;
   StrMap<bool>  is_extruded_param;
   StrMap<int>   extruded_params_levels;
+
+  // Equation offset and level of a 2D solution field defined at one level of the extruded mesh
+  // (e.g., the thickness of StokesFOThickness), or -1 if none. Passed to the responses, so that
+  // their Jacobian scatter maps the derivatives w.r.t. this field to its dofs at that level.
+  int extruded_2d_field_offset = -1;
+  int extruded_2d_field_level  = -1;
 
   // Track the utility evaluators that a field needs
   StrMap<std::map<IReq,bool>> build_interp_ev;
@@ -487,7 +501,7 @@ constructStatesEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& fm0,
       if (is_input_field[stateName]) {
         // An input (not computed): gather it
         if (is_extruded_param[stateName]) {
-          ev = evalUtils.constructGatherScalarExtruded2DNodalParameter(stateName,fieldName);
+          ev = evalUtils.constructGatherScalarExtruded2DNodalParameter(stateName,fieldName, extruded_params_levels.at(stateName));
           fm0.template registerEvaluator<EvalT>(ev);
         } else {
           ev = evalUtils.constructGatherScalarNodalParameter(stateName,fieldName);
@@ -1300,6 +1314,10 @@ constructVelocityEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& fm0,
   //Output
   p->set<std::string>("Viscosity QP Variable Name", "LandIce Viscosity");
   p->set<std::string>("EpsilonSq QP Variable Name", "LandIce EpsilonSq");
+  p->set<bool>("Extract Strain Rate Sq", compute_dissipation);
+  if (compute_adapt_indicator) {
+    p->set<std::string>("Effective Strain Rate QP Variable Name", effective_strain_rate_name);
+  }
 
   // The st of T for viscosity is complicated: you need to get the st of the T used (temp or corrected temp),
   // and consider that you do Nodes->Cell interp, which introduces MeshScalar type in the result.
@@ -1372,6 +1390,26 @@ constructVelocityEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>& fm0,
       // Only PHAL::AlbanyTraits::Residual evaluates something
       if (ev->evaluatedFields().size()>0) {
         // Require save friction heat
+        fm0.template requireField<EvalT>(*ev->evaluatedFields()[0]);
+      }
+    }
+  }
+
+  // Saving the adaptation indicator field in the output mesh
+  if (compute_adapt_indicator) {
+    // Interpolate effective strain rate (computed by ViscosityFO) from qps to a single cell scalar
+    ev = evalUtils.constructCellAverageEvaluator(effective_strain_rate_name, FL::QuadPoint, FRT::Scalar);
+    fm0.template registerEvaluator<EvalT> (ev);
+
+    // Save the indicator field
+    auto entity = Albany::StateStruct::ElemData;
+    p = stateMgr.registerStateVariable(effective_strain_rate_name, dl->cell_scalar2, meshSpecs.ebName, true, &entity);
+    ev = Teuchos::rcp(new PHAL::SaveStateField<EvalT,PHAL::AlbanyTraits>(*p));
+    fm0.template registerEvaluator<EvalT>(ev);
+
+    if (fieldManagerChoice == Albany::BUILD_RESID_FM) {
+      // Only PHAL::AlbanyTraits::Residual evaluates something
+      if (ev->evaluatedFields().size()>0) {
         fm0.template requireField<EvalT>(*ev->evaluatedFields()[0]);
       }
     }
@@ -1875,6 +1913,11 @@ constructStokesFOBaseResponsesEvaluators (PHX::FieldManager<PHAL::AlbanyTraits>&
     paramList->set<Teuchos::RCP<ParamLib> >("Parameter Library", paramLib);
     paramList->set<Teuchos::ParameterList>("LandIce Physical Parameters List", params->sublist("LandIce Physical Parameters"));
     paramList->set<Teuchos::RCP<std::map<std::string, int>>> ("Extruded Params Levels", Teuchos::rcpFromRef(extruded_params_levels));
+    if (extruded_2d_field_offset>=0) {
+      // See PHAL::SeparableScatterScalarResponse<Jacobian>::setupExtruded2DField
+      paramList->set<int>("Extruded 2D Field Offset", extruded_2d_field_offset);
+      paramList->set<int>("Extruded 2D Field Level", extruded_2d_field_level);
+    }
     paramList->set<std::string>("Coordinate Vector Side Variable Name", basal_fname(Albany::coord_vec_name));
     paramList->set<std::string>("Basal Friction Coefficient Name", basal_friction_name);
     paramList->set<std::string>("Stiffening Factor Log Gradient Name",basal_fname(stiffening_factor_log_name + "_gradient"));

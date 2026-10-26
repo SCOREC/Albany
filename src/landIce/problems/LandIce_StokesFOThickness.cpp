@@ -65,6 +65,13 @@ StokesFOThickness::StokesFOThickness(
   dof_offsets.resize(2,0);
   dof_offsets[1] = vecDimFO;
 
+  // The thickness (change) is a 2D field defined at the top level of the extruded mesh
+  // (see constructThicknessEvaluators): tell the responses (see StokesFOBase)
+  if (discParams->isType<int>("NumLayers")) {
+    extruded_2d_field_offset = dof_offsets[1];
+    extruded_2d_field_level  = discParams->get<int>("NumLayers");
+  }
+
   // We have two values for ice_thickness: the initial one, and the updated one.
   initial_ice_thickness_name = ice_thickness_name;
 
@@ -72,6 +79,7 @@ StokesFOThickness::StokesFOThickness(
     surface_height_name += "_computed";
     ice_thickness_name += "_computed";
   }
+  thickness_forcing_name = "thickness_forcing";
   lateralSideName = this->params->get<std::string>("Lateral Side Name", "lateralside");
 
   effectivePressure_from_basalFrictionEval = true;
@@ -330,6 +338,7 @@ void StokesFOThickness::setFieldsProperties () {
     setSingleFieldProperties(surface_height_name, FRT::Scalar, FST::ParamScalar);
   }
   setSingleFieldProperties(initial_ice_thickness_name, FRT::Scalar, FST::ParamScalar);  
+  setSingleFieldProperties(thickness_forcing_name, FRT::Scalar, FST::Real);
 }
 
 } // namespace LandIce

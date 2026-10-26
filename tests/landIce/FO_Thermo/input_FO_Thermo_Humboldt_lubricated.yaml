@@ -18,8 +18,6 @@ ANONYMOUS:
     Cubature Degree: 4
     Basal Cubature Degree: 3
     Surface Cubature Degree: 4
-    Needs Dissipation: true
-    Needs Basal Friction: true
     LandIce Field Norm:
       sliding_velocity_basalside:
         Regularization Type: Given Value
@@ -48,15 +46,23 @@ ANONYMOUS:
         Side Set Name: extruded_boundary_side_set_1
         #Immersed Ratio: 0.893
     Parameters:
-      Number Of Parameters: 1
+      Number Of Parameters: 2
       Parameter 0:
         Lower Bound: -12.0
         Mesh Part: bottom
         Type: Distributed
         Name: basal_friction_log
         Upper Bound: 12.0
+      Parameter 1:
+        Lower Bound: -1.5
+        Mesh Part: bottom
+        Extruded: true
+        Type: Distributed
+        Name: stiffening_factor_log
+        Upper Bound: 1.5
     LandIce Viscosity:
       Extract Strain Rate Sq: true
+      Use Stiffening Factor: true
       Type: Glen's Law
       Glen's Law Homotopy Parameter: 0.5e+00
       Continuous Homotopy With Constant Initial Viscosity: true
@@ -120,13 +126,13 @@ ANONYMOUS:
     Columnwise Ordering: true
     NumLayers: 2
     Thickness Field Name: ice_thickness
-    Extrude Basal Node Fields: [ice_thickness, surface_height, basal_friction_log, bed_topography, surface_air_temperature]
-    Basal Node Fields Ranks: [1, 1, 1, 1, 1, 1, 1]
+    Extrude Basal Node Fields: [ice_thickness, surface_height, basal_friction_log, bed_topography, surface_air_temperature, stiffening_factor_log]
+    Basal Node Fields Ranks: [1, 1, 1, 1, 1, 1, 1, 1]
     Interpolate Basal Node Layered Fields: [velocity]
     Basal Node Layered Fields Ranks: [2]
     Use Glimmer Spacing: true
     Required Fields Info:
-      Number Of Fields: 11
+      Number Of Fields: 12
       Field 0:
         Field Name: ice_thickness
         Field Type: Node Scalar
@@ -173,6 +179,10 @@ ANONYMOUS:
         Field Name: velocity
         Field Type: Node Vector
         Field Origin: Mesh
+      Field 11:
+        Field Name: stiffening_factor_log
+        Field Type: Node Scalar
+        Field Origin: Mesh
     Side Set Discretizations:
       Side Sets: [basalside, upperside]
       basalside:
@@ -184,7 +194,7 @@ ANONYMOUS:
         Exodus Input File Name: ../AsciiMeshes/Humboldt/humboldt_2d.exo
         Exodus Output File Name: ./humboldt_basal.exo
         Required Fields Info:
-          Number Of Fields: 9
+          Number Of Fields: 10
           Field 0:
             Field Name: ice_thickness
             Field Type: Node Scalar
@@ -233,6 +243,11 @@ ANONYMOUS:
             Number Of Layers: 2
             Vector Dim: 2
             File Name: ../AsciiMeshes/Humboldt/extruded_surface_velocity.ascii
+          Field 9:
+            Field Name: stiffening_factor_log
+            Field Type: Node Scalar
+            Field Origin: File
+            Field Value: 0.0
       upperside:
         Workset Size: -1
         Method: SideSetSTK
@@ -309,7 +324,7 @@ ANONYMOUS:
                   CoarseOperator Type: IPOUHarmonicCoarseOperator           # Second Level: IPOUHarmonicCoarseOperator work for all kinds of GDSW type coarse spaces
                   Recycling: true                                           # This enables the possibility to re-use parts of the preconditioner in a Newton or time iteration
                   Dimension: 3                                              # Spatial dimension of the problem
-                  DofsPerNode: 6                                            # Number of degrees of freedom per node
+                  DofsPerNode: 5                                            # Number of degrees of freedom per node
                   Overlap: 0                                                # Number of layers of elements in the overlap
                   Null Space Type: Input                                    # Null space is provided by Albany
                   AlgebraicOverlappingOperator:
@@ -362,8 +377,10 @@ ANONYMOUS:
         Status Test Check Type: Minimal
   Regression For Response 0:
     Relative Tolerance: 1.0e-06
-    Test Value:  1.554983546608e+01
+    Test Value:  1.535204820358e+01
     Sensitivity For Parameter 0:
-      Test Value: 7.652733203298e+00
+      Test Value: 7.507326171951e+00
+    Sensitivity For Parameter 1:
+      Test Value: 1.040364527619e+01
 ...
 ...
