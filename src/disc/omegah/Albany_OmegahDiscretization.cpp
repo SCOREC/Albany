@@ -43,9 +43,22 @@ namespace {
     TEUCHOS_TEST_FOR_EXCEPTION (not mesh.has_tag(mesh.dim(), name), std::runtime_error,
       "Error! Adaptation indicator field '" + name + "' not found in the mesh.\n"
       "  - Make sure the problem registers it as an Elem Scalar state.\n");
-    auto array = mesh.get_array<Omega_h::Real>(mesh.dim(), name);
-    TEUCHOS_TEST_FOR_EXCEPTION (array.size() != mesh.nelems(), std::runtime_error,
-      "Error! " + name + " array should have one component per element.\n");
+    auto raw = mesh.get_array<Omega_h::Real>(mesh.dim(), name);
+    const int ncomps = mesh.get_tag<Omega_h::Real>(mesh.dim(), name)->ncomps();
+    TEUCHOS_TEST_FOR_EXCEPTION (raw.size() != mesh.nelems()*ncomps, std::runtime_error,
+      "Error! " + name + " array should have " + std::to_string(ncomps) + " component(s) per element.\n");
+    //A field computed on an extruded mesh is stored on the basal mesh with
+    //one component per layer; use the max over the layers.
+    Omega_h::Reals array = raw;
+    if (ncomps > 1) {
+      auto layerMax = Omega_h::Write<Omega_h::Real>(mesh.nelems());
+      Omega_h::parallel_for(mesh.nelems(), OMEGA_H_LAMBDA(const LO &e) {
+        Omega_h::Real m = raw[e*ncomps];
+        for (int c = 1; c < ncomps; ++c) m = Omega_h::max2(m, raw[e*ncomps+c]);
+        layerMax[e] = m;
+      });
+      array = layerMax;
+    }
     //Phalanx fills this memory with values for the indicator field for
     //**owned elements only**; indices corresponding to ghosted/unowned
     //elements are not included in the array.

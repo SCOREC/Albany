@@ -71,9 +71,18 @@ StokesFOBase (const Teuchos::RCP<Teuchos::ParameterList>& params_,
 
   // If mesh adaptation is enabled, make sure the disc knows which field drives it.
   // Unless the user picked one, we use the effective strain rate (computed by this problem)
+  // For extruded meshes, adaptation is driven by the basal side discretization.
   effective_strain_rate_name = "effective_strain_rate";
-  if (discParams->isSublist("Mesh Adaptivity")) {
-    auto& adapt_pl = discParams->sublist("Mesh Adaptivity");
+  Teuchos::ParameterList* adapt_pl_ptr = nullptr;
+  if (discParams->isSublist("Side Set Discretizations") &&
+      discParams->sublist("Side Set Discretizations").isSublist("basalside") &&
+      discParams->sublist("Side Set Discretizations").sublist("basalside").isSublist("Mesh Adaptivity")) {
+    adapt_pl_ptr = &discParams->sublist("Side Set Discretizations").sublist("basalside").sublist("Mesh Adaptivity");
+  } else if (discParams->isSublist("Mesh Adaptivity")) {
+    adapt_pl_ptr = &discParams->sublist("Mesh Adaptivity");
+  }
+  if (adapt_pl_ptr != nullptr) {
+    auto& adapt_pl = *adapt_pl_ptr;
     adapt_enabled = adapt_pl.get<std::string>("Type","None")!="None";
     if (adapt_enabled) {
       if (not adapt_pl.isParameter("Indicator Field Name")) {
