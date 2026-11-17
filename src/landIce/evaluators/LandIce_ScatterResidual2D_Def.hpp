@@ -98,22 +98,42 @@ evaluateFields(typename AlbanyTraits::EvalData workset)
   // any knowledge of column contraction operations.
   const int columnsOffset = neq*this->numNodes;
 
-  const bool scatter_f = Teuchos::nonnull(workset.f);
-  auto f_data = scatter_f ? Albany::getNonconstLocalData(workset.f) : Teuchos::null;
-  auto Jac = workset.Jac;
-
   const int ncols_volume = neq*this->numNodes;
   const int ncols_layers = neq*numSideNodes*numLevels;
-  Teuchos::Array<LO>lcols_layered(ncols_layers);
-  const double one = 1;
   const auto& sideSet = workset.sideSets->at(meshPart);
-  for (const auto& side : sideSet) {
-    const int cell = side.ws_elem_idx;
+  const int numSides = sideSet.size();
+
+  // Build the row/col lids on host, since they need the layered numbering
+  Kokkos::View<int*,PHX::Device>  side_cell("side_cell",numSides);
+  Kokkos::View<LO**,PHX::Device>  diag_rows("diag_rows",numSides,numLevels*numSideNodes);
+  Kokkos::View<LO**,PHX::Device>  cols_layered("cols_layered",numSides,ncols_layers);
+  Kokkos::View<LO**,PHX::Device>  cols_volume("cols_volume",numSides,ncols_volume);
+  Kokkos::View<LO**,PHX::Device>  rows("rows",numSides,numSideNodes);
+  Kokkos::View<int*,PHX::Device>  cell_nodes("cell_nodes",numSideNodes);
+  auto side_cell_h    = Kokkos::create_mirror_view(side_cell);
+  auto diag_rows_h    = Kokkos::create_mirror_view(diag_rows);
+  auto cols_layered_h = Kokkos::create_mirror_view(cols_layered);
+  auto cols_volume_h  = Kokkos::create_mirror_view(cols_volume);
+  auto rows_h         = Kokkos::create_mirror_view(rows);
+  auto cell_nodes_h   = Kokkos::create_mirror_view(cell_nodes);
+  Kokkos::deep_copy(diag_rows_h,-1);
+
+  // Note: top nodes must be parsed in the same 2D order as the field_pos side
+  const auto& offsets_2d_field = dof_mgr->getGIDFieldOffsetsSide(this->offset,field_pos);
+  const auto& cell_node_pos = node_dof_mgr->getGIDFieldOffsetsSide(0,field_pos);
+  for (int inode=0; inode<numSideNodes; ++inode) {
+    cell_nodes_h(inode) = cell_node_pos[inode];
+  }
+
+  for (int iside=0; iside<numSides; ++iside) {
+    const int cell = sideSet[iside].ws_elem_idx;
+    side_cell_h(iside) = cell;
     // Get column ID of the cell, since it cell might be at the top!
     const int side_elem_LID = elem_lids(cell);
     const int basal_elem_LID = layers_data.cell.lid->getColumnId(side_elem_LID);
 
     // Gather Jac col indices, and set Jac=1 outside of the level where the field is defined
+    int idiag = 0;
     for (int ilev=0; ilev<=numLayers; ++ilev) {
       // Get correct cell layer and correct dofs offsets
       const int ilayer = ilev==0 ? 0 : ilev-1;
@@ -127,10 +147,7 @@ evaluateFields(typename AlbanyTraits::EvalData workset)
         //       to guarantee corresponding nodes are vertically aligned.
         const auto& dof_offsets = dof_mgr->getGIDFieldOffsetsSide(eq,pos,field_pos);
         for (int inode=0; inode<numSideNodes; ++inode) {
-          const int lrow = dof_lids(dof_offsets[inode]);
-
-          // add to lcols
-          lcols_layered[ilev*neq*numSideNodes + neq*inode + eq] = lrow;
+          cols_layered_h(iside,ilev*neq*numSideNodes + neq*inode + eq) = dof_lids(dof_offsets[inode]);
         }
       }
 
@@ -140,37 +157,70 @@ evaluateFields(typename AlbanyTraits::EvalData workset)
         //       to guarantee corresponding nodes are vertically aligned.
         const auto& dof_offsets = dof_mgr->getGIDFieldOffsetsSide(this->offset,pos,field_pos);
         for (int inode=0; inode<numSideNodes; ++inode) {
-          const LO lrow = dof_lids(dof_offsets[inode]);
-          Albany::setLocalRowValue(Jac, lrow, lrow, one);
+          diag_rows_h(iside,idiag++) = dof_lids(dof_offsets[inode]);
         }
       }
     }
 
     // Not column-coupled cols
-    auto lcols = Kokkos::subview(elem_dof_lids,side_elem_LID,ALL);
+    for (int icol=0; icol<ncols_volume; ++icol) {
+      cols_volume_h(iside,icol) = elem_dof_lids(side_elem_LID,icol);
+    }
 
-    // Note: top nodes must be parsed in the same 2D order as the field_pos side
-    const auto& offsets_2d_field = dof_mgr->getGIDFieldOffsetsSide(this->offset,field_pos);
     const int elem_LID = layers_data.cell.lid->getId(basal_elem_LID,field_layer);
-    const auto dof_lids = Kokkos::subview(elem_dof_lids,elem_LID,ALL);
-    const auto& cell_node_pos = node_dof_mgr->getGIDFieldOffsetsSide(0,field_pos);
+    for (int inode=0; inode<numSideNodes; ++inode) {
+      rows_h(iside,inode) = elem_dof_lids(elem_LID,offsets_2d_field[inode]);
+    }
+  }
+  Kokkos::deep_copy(side_cell,side_cell_h);
+  Kokkos::deep_copy(diag_rows,diag_rows_h);
+  Kokkos::deep_copy(cols_layered,cols_layered_h);
+  Kokkos::deep_copy(cols_volume,cols_volume_h);
+  Kokkos::deep_copy(rows,rows_h);
+  Kokkos::deep_copy(cell_nodes,cell_nodes_h);
+
+  Albany::ThyraVDeviceView<ST> f_data;
+  const bool scatter_f = Teuchos::nonnull(workset.f);
+  if (scatter_f) {
+    f_data = workset.f_kokkos;
+  }
+  auto Jac_kokkos = workset.Jac_kokkos;
+  const auto resid = this->device_resid;
+  const int numDiag = diag_rows.extent(1);
+
+  Kokkos::parallel_for(this->getName(),
+                       RangePolicy(0,numSides),
+                       KOKKOS_LAMBDA(const int iside) {
+    const ST one = 1;
+    for (int idiag=0; idiag<numDiag; ++idiag) {
+      const LO lrow = diag_rows(iside,idiag);
+      if (lrow>=0) {
+        Jac_kokkos.replaceValues(lrow,&lrow,1,&one,false,is_atomic);
+      }
+    }
 
     // Recall: we scatter a single scalar residual, so no loop on [0,numFields) here.
+    const int cell = side_cell(iside);
     for (int inode=0; inode<numSideNodes; ++inode) {
-      const int lrow = dof_lids(offsets_2d_field[inode]);
-      const int cellNode = cell_node_pos[inode];
-      auto res = this->get_resid(cell,cellNode,0);
+      const LO lrow = rows(iside,inode);
+      auto res = resid.get(cell,cell_nodes(inode),0);
       if (scatter_f) {
-        f_data[lrow] += res.val();
+        KU::atomic_add<ExecutionSpace>(&f_data(lrow), res.val());
       }
       if (res.hasFastAccess()) {
         // Column-coupled part
-        Albany::addToLocalRowValues(Jac,lrow,ncols_layers, lcols_layered.data(), &res.fastAccessDx(columnsOffset));
+        for (int icol=0; icol<ncols_layers; ++icol) {
+          const ST val = res.fastAccessDx(columnsOffset+icol);
+          Jac_kokkos.sumIntoValues(lrow,&cols_layered(iside,icol),1,&val,false,is_atomic);
+        }
         // Non-column-coupled part
-        Albany::addToLocalRowValues(Jac,lrow,ncols_volume, lcols.data(), &res.fastAccessDx(0));
+        for (int icol=0; icol<ncols_volume; ++icol) {
+          const ST val = res.fastAccessDx(icol);
+          Jac_kokkos.sumIntoValues(lrow,&cols_volume(iside,icol),1,&val,false,is_atomic);
+        }
       }
     }
-  }
+  });
 }
 
 // **********************************************************************
@@ -206,95 +256,123 @@ evaluateFields(typename AlbanyTraits::EvalData workset)
   const int neq = dof_mgr->getNumFields();
   const int nunk = this->numNodes*(neq-1);
   const int numSideNodes = field_offsets.size();
+  const int numNodes = this->numNodes;
+  const int numFields = this->numFields;
+  const int offset = this->offset;
+  const int field2D = offset2DField;
 
-  Teuchos::Array<LO> lcols_nunk, lcols_nodes, index;
-  lcols_nunk.resize(nunk), index.resize(nunk), lcols_nodes.resize(this->numNodes);
+  const auto sol_offsets_h = this->m_fields_offsets.host();
+  const auto sol_offsets   = this->m_fields_offsets.dev();
 
-  const bool scatter_f = Teuchos::nonnull(workset.f);
-  auto f_data = scatter_f? Albany::getNonconstLocalData(workset.f) : Teuchos::null;
-  auto Jac = workset.Jac;
-
-  const auto sol_offsets   = this->m_fields_offsets.host();
-  const auto elem_offsets_field2d = dof_mgr->getGIDFieldOffsets(offset2DField);
-  for (size_t cell=0; cell<workset.numCells; ++cell ) {
-    // 1. All contributions except the extruded field
-    const int elem_LID = elem_lids(cell);
-    const auto dof_lids = Kokkos::subview(elem_dof_lids,elem_LID,ALL);
-
-    // Local Unks: gather LID of all other dofs (not the extruded field)
-    for (int node=0, i=0; node<this->numNodes; ++node){
-      for (int eq=0; eq<neq; ++eq) {
-        if(eq != offset2DField) {
-          lcols_nunk[i] = dof_lids(sol_offsets(node,eq));
-          index[i++] = sol_offsets(node,eq);
-        }
+  // Offsets of all the dofs except the extruded field
+  Kokkos::View<int*,PHX::Device> unk_offsets("unk_offsets",nunk);
+  auto unk_offsets_h = Kokkos::create_mirror_view(unk_offsets);
+  for (int node=0, i=0; node<numNodes; ++node){
+    for (int eq=0; eq<neq; ++eq) {
+      if(eq != offset2DField) {
+        unk_offsets_h(i++) = sol_offsets_h(node,eq);
       }
     }
+  }
+  Kokkos::deep_copy(unk_offsets,unk_offsets_h);
 
-    for (int node=0; node<this->numNodes; ++node) {
-      for (int eq=0; eq<this->numFields; ++eq) {
-        if(this->offset + eq != offset2DField) {
-          auto res = this->get_resid(cell,node,eq);
+  // Top/bottom nodes and dof offsets, ordered as on side $field_pos
+  // to guarantee corresponding nodes are vertically aligned.
+  Kokkos::View<int**,PHX::Device>  side_nodes("side_nodes",2,numSideNodes);
+  Kokkos::View<int***,PHX::Device> side_offsets("side_offsets",numFields,2,numSideNodes);
+  auto side_nodes_h   = Kokkos::create_mirror_view(side_nodes);
+  auto side_offsets_h = Kokkos::create_mirror_view(side_offsets);
+  for (int node2d=0; node2d<numSideNodes; ++node2d) {
+    side_nodes_h(0,node2d) = top_nodes[node2d];
+    side_nodes_h(1,node2d) = bot_nodes[node2d];
+  }
+  for (int eq=0; eq<numFields; ++eq) {
+    if(eq != offset2DField) {
+      const auto& top_offsets = dof_mgr->getGIDFieldOffsetsSide(eq,top,field_pos);
+      const auto& bot_offsets = dof_mgr->getGIDFieldOffsetsSide(eq,bot,field_pos);
+      for (int node2d=0; node2d<numSideNodes; ++node2d) {
+        side_offsets_h(eq,0,node2d) = top_offsets[node2d];
+        side_offsets_h(eq,1,node2d) = bot_offsets[node2d];
+      }
+    }
+  }
+  Kokkos::deep_copy(side_nodes,side_nodes_h);
+  Kokkos::deep_copy(side_offsets,side_offsets_h);
 
-          // Safety check: FAD derivs should be inited by now
-          assert(res.hasFastAccess());
+  // Lids of the 2d field in the cell containing the level where the field is
+  Kokkos::View<LO**,PHX::Device> field_cols("field_cols",workset.numCells,numNodes);
+  auto field_cols_h = Kokkos::create_mirror_view(field_cols);
+  for (size_t cell=0; cell<workset.numCells; ++cell ) {
+    const int elem_LID = elem_lids(cell);
+    const int basal_elem_LID = layers_data.cell.lid->getColumnId(elem_LID);
+    const int field_elem_LID = layers_data.cell.lid->getId(basal_elem_LID,field_layer);
+    for (int node=0; node<numSideNodes; ++node) {
+      field_cols_h(cell,bot_nodes[node]) = elem_dof_lids(field_elem_LID,field_offsets[node]);
+      field_cols_h(cell,top_nodes[node]) = elem_dof_lids(field_elem_LID,field_offsets[node]);
+    }
+  }
+  Kokkos::deep_copy(field_cols,field_cols_h);
 
-          const int lrow = dof_lids(sol_offsets(node,this->offset + eq));
+  const auto ws_elem_lids = workset.disc->getWsElementLIDs().dev();
+  const auto elem_lids_d  = Kokkos::subview(ws_elem_lids,workset.wsIndex,ALL);
+  const auto elem_dof_lids_d = dof_mgr->elem_dof_lids().dev();
+
+  Albany::ThyraVDeviceView<ST> f_data;
+  const bool scatter_f = Teuchos::nonnull(workset.f);
+  if (scatter_f) {
+    f_data = workset.f_kokkos;
+  }
+  auto Jac_kokkos = workset.Jac_kokkos;
+  const auto resid = this->device_resid;
+
+  Kokkos::parallel_for(this->getName(),
+                       RangePolicy(0,workset.numCells),
+                       KOKKOS_LAMBDA(const int cell) {
+    const auto dof_lids = Kokkos::subview(elem_dof_lids_d,elem_lids_d(cell),ALL);
+
+    // 1. All contributions except the extruded field
+    for (int node=0; node<numNodes; ++node) {
+      for (int eq=0; eq<numFields; ++eq) {
+        if(offset + eq != field2D) {
+          auto res = resid.get(cell,node,eq);
+
+          const LO lrow = dof_lids(sol_offsets(node,offset + eq));
           if (scatter_f) {
-            f_data[lrow] += res.val();
+            KU::atomic_add<ExecutionSpace>(&f_data(lrow), res.val());
           }
 
           // Need to do derivs one-by-one, since we have a 2-level indirection
           for (int lunk = 0; lunk < nunk; lunk++) {
-            Albany::addToLocalRowValue(Jac,lrow,lcols_nunk[lunk],res.fastAccessDx(index[lunk]));
+            const LO lcol = dof_lids(unk_offsets(lunk));
+            const ST val = res.fastAccessDx(unk_offsets(lunk));
+            Jac_kokkos.sumIntoValues(lrow,&lcol,1,&val,false,is_atomic);
           }
         }
       }
     }
 
     // 2. Contribution of the extruded field
-
-    // Get the local ID of the cell that contains the level where the field is,
-    // and the lids of the 2d field in that cell
-    const int basal_elem_LID = layers_data.cell.lid->getColumnId(elem_LID);
-    const int field_elem_LID = layers_data.cell.lid->getId(basal_elem_LID,field_layer);
-    const auto field_elem_dof_lids = Kokkos::subview(elem_dof_lids,field_elem_LID,ALL);
-    for (int node=0; node<numSideNodes; ++node) {
-      lcols_nodes[bot_nodes[node]] = field_elem_dof_lids(field_offsets[node]);
-      lcols_nodes[top_nodes[node]] = field_elem_dof_lids(field_offsets[node]);
-    }
-
     for (int node2d=0; node2d<numSideNodes; ++node2d) {
-      for (int eq=0; eq<this->numFields; ++eq) {
-        // Helper lambda
-        auto f = [&](const std::vector<int>& nodes,
-                     const std::vector<int>& dof_offsets) {
-          const LO lrow = dof_lids(dof_offsets[node2d]);
-          auto res = this->get_resid(cell,nodes[node2d],this->offset+eq);
-
-          // Safety check: FAD derivs should be inited by now
-          assert(res.hasFastAccess());
+      for (int eq=0; eq<numFields; ++eq) {
+        if(eq == field2D) continue;
+        for (int tb=0; tb<2; ++tb) {
+          const LO lrow = dof_lids(side_offsets(eq,tb,node2d));
+          auto res = resid.get(cell,side_nodes(tb,node2d),offset+eq);
 
           if (scatter_f) {
-            f_data[lrow] += res.val();
+            KU::atomic_add<ExecutionSpace>(&f_data(lrow), res.val());
           }
 
           // Need to do derive one-by-one, since they are strided
-          for (int i=0; i<this->numNodes; ++i) {
-            Albany::addToLocalRowValue(Jac,lrow,lcols_nodes[i],
-                res.fastAccessDx(sol_offsets(i,offset2DField)));
+          for (int i=0; i<numNodes; ++i) {
+            const LO lcol = field_cols(cell,i);
+            const ST val = res.fastAccessDx(sol_offsets(i,field2D));
+            Jac_kokkos.sumIntoValues(lrow,&lcol,1,&val,false,is_atomic);
           }
-        };
-
-        if(eq != offset2DField) {
-          // Note: grab offsets on top/bot ordered in the same way as on side $field_pos
-          //       to guarantee corresponding nodes are vertically aligned.
-          f(top_nodes,dof_mgr->getGIDFieldOffsetsSide(eq,top,field_pos));
-          f(bot_nodes,dof_mgr->getGIDFieldOffsetsSide(eq,bot,field_pos));
         }
       }
     }
-  }
+  });
 }
 
 // **********************************************************************
