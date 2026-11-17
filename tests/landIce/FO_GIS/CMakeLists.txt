@@ -119,6 +119,7 @@ if (ALBANY_IFPACK2)
                        LABELS "LandIce;Forward"
                        FIXTURES_REQUIRED PopulateMeshes
                        FIXTURES_SETUP ${testName})
+  albany_tests_require_static_fad(${testName})
 
   # Logically extruded mesh
   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_fo_gis_unstruct_extruded.yaml
@@ -129,6 +130,7 @@ if (ALBANY_IFPACK2)
                        LABELS "LandIce;Forward"
                        FIXTURES_REQUIRED PopulateMesh2d
                        FIXTURES_SETUP ${testName}_extruded)
+  albany_tests_require_static_fad(${testName}_extruded)
 
   if (ALBANY_OMEGAH)
     add_test (NAME ${testName}_CreateGisOsh
@@ -144,6 +146,7 @@ if (ALBANY_IFPACK2)
                          PROPERTIES
                          LABELS "LandIce;Forward;Omega_h"
                          FIXTURES_REQUIRED CreateGisOshMesh)
+    albany_tests_require_static_fad(${testName}_Omega_h)
   endif()
 
   # Memoization run
@@ -154,6 +157,7 @@ if (ALBANY_IFPACK2)
                        PROPERTIES
                        LABELS "LandIce;Forward"
                        FIXTURES_REQUIRED PopulateMeshes)
+  albany_tests_require_static_fad(${testName}_Memoization)
 
   if (NOT ALBANY_DISABLE_OUTPUT_MESH)
     # Restart
@@ -165,6 +169,7 @@ if (ALBANY_IFPACK2)
                           LABELS "LandIce;Forward"
                           RUN_SERIAL TRUE
                           FIXTURES_REQUIRED ${testName})
+    albany_tests_require_static_fad(${testName}_Restart)
 
     # Restart the logically extruded mesh test
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_fo_gis_unstruct_extruded_restart.yaml
@@ -175,6 +180,7 @@ if (ALBANY_IFPACK2)
                           LABELS "LandIce;Forward"
                           RUN_SERIAL TRUE
                           FIXTURES_REQUIRED ${testName}_extruded)
+    albany_tests_require_static_fad(${testName}_extruded_restart)
   endif()
 endif()
 
@@ -201,6 +207,7 @@ if (ALBANY_FROSCH)
                        PROPERTIES
                        LABELS "LandIce;Forward"
                        FIXTURES_REQUIRED PopulateMeshes)
+  albany_tests_require_static_fad(${testName}_FROSch)
   
   #  if (NOT ALBANY_DISABLE_FAILING_TESTS)
   #     tests not executed during PR testing
@@ -396,6 +403,7 @@ if (ALBANY_IFPACK2)
 
   add_test(${testName} ${Albany.exe} input_fo_gis20km_test.yaml)
   set_tests_properties(${testName}  PROPERTIES LABELS "LandIce;Forward")
+  albany_tests_require_static_fad(${testName})
 endif()
 
 ####################################
@@ -473,11 +481,13 @@ if (ALBANY_IFPACK2)
                  ${CMAKE_CURRENT_BINARY_DIR}/input_fo_gis_adjoint_sensitivity.yaml)
   add_test(${testName} ${Albany.exe} input_fo_gis_adjoint_sensitivity.yaml)
   set_tests_properties(${testName} PROPERTIES LABELS "LandIce;Forward")
+  albany_tests_require_static_fad(${testName})
   set (testName ${testNameRoot}_ForwardSensitivity)
   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_fo_gis_forward_sensitivity.yaml
                  ${CMAKE_CURRENT_BINARY_DIR}/input_fo_gis_forward_sensitivity.yaml)
   add_test(${testName} ${Albany.exe} input_fo_gis_forward_sensitivity.yaml)
   set_tests_properties(${testName} PROPERTIES LABELS "LandIce;Forward")
+  albany_tests_require_static_fad(${testName})
 endif()
 
 # Basal friction sensitivity
@@ -656,6 +666,7 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/input_fo_gis_manifold.yaml
 
 add_test(${testName} ${Albany.exe} input_fo_gis_manifold.yaml)
 set_tests_properties(${testName} PROPERTIES LABELS "LandIce;Forward")
+albany_tests_require_static_fad(${testName})
 
 ####################################
 ###   Laplacian sampling tests   ###
