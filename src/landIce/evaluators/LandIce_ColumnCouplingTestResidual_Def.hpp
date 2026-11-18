@@ -59,6 +59,16 @@ evaluateFields (typename Traits::EvalData workset)
   const auto elem_lids    = workset.disc->getElementLIDs_host(workset.wsIndex);
   const auto node_dof_mgr = workset.disc->getNodeDOFManager();
 
+  // The side set data is on host, so work on host copies of the fields
+  const auto toHost = [](const auto& v) {
+    auto v_h = Kokkos::create_mirror_view(v);
+    Kokkos::deep_copy(v_h,v);
+    return v_h;
+  };
+  const auto solution_h    = toHost(solution.get_view());
+  const auto surf_height_h = toHost(surf_height.get_view());
+  const auto residual_h    = toHost(residual.get_view());
+
   const auto& sideSet = workset.sideSets->at(sideSetName);
   const int numSides = sideSet.size();
   for (auto iside=0; iside<numSides; ++iside) {
@@ -68,9 +78,10 @@ evaluateFields (typename Traits::EvalData workset)
     const auto& node_offsets = node_dof_mgr->getGIDFieldOffsetsSide(0,pos);
     const int numSideNodes = node_offsets.size();
     for (int inode=0; inode<numSideNodes; ++inode) {
-      residual (cell,node_offsets[inode]) = surf_height(iside,inode) - solution(iside,inode);
+      residual_h (cell,node_offsets[inode]) = surf_height_h(iside,inode) - solution_h(iside,inode);
     }
   }
+  Kokkos::deep_copy(residual.get_view(),residual_h);
 }
 
 } // Namespace PHAL
