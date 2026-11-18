@@ -113,6 +113,18 @@ void LandIce::LayeredFluxDivergenceResidual<EvalT, Traits, ThicknessScalarT>::ev
   int node1p1 = nodes_top[1];
   int node2p1 = nodes_top[2];
 
+  // The layered numbering is on host, so work on host copies of the fields
+  const auto toHost = [](const auto& v) {
+    auto v_h = Kokkos::create_mirror_view(v);
+    Kokkos::deep_copy(v_h,v);
+    return v_h;
+  };
+  const auto coords_h   = toHost(coords.get_view());
+  const auto H_h        = toHost(H.get_view());
+  const auto vel_h      = toHost(vel.get_view());
+  const auto flux_div_h = toHost(flux_div.get_view());
+  const auto residual_h = toHost(residual.get_view());
+
   for (unsigned int cell=0; cell<workset.numCells; ++cell) {
     const LO elem_LID = elem_lids(cell);
     const int ilayer = layers_data.cell.lid->getLayerId(elem_LID);
@@ -120,12 +132,12 @@ void LandIce::LayeredFluxDivergenceResidual<EvalT, Traits, ThicknessScalarT>::ev
     auto dz = dz_ref[ilayer];
 
     //computing coordinates of the vertices of the triangle at the base of the prism
-    MeshScalarT x0 = coords(cell, node0, 0);
-    MeshScalarT y0 = coords(cell, node0, 1);
-    MeshScalarT x1 = coords(cell, node1, 0);
-    MeshScalarT y1 = coords(cell, node1, 1);
-    MeshScalarT x2 = coords(cell, node2, 0);
-    MeshScalarT y2 = coords(cell, node2, 1);
+    MeshScalarT x0 = coords_h(cell, node0, 0);
+    MeshScalarT y0 = coords_h(cell, node0, 1);
+    MeshScalarT x1 = coords_h(cell, node1, 0);
+    MeshScalarT y1 = coords_h(cell, node1, 1);
+    MeshScalarT x2 = coords_h(cell, node2, 0);
+    MeshScalarT y2 = coords_h(cell, node2, 1);
 
     //computing the signed area of the base triangle
     MeshScalarT area = (x0*(y1-y2)-x1*(y0-y2)+x2*(y0-y1))/2.;
@@ -178,14 +190,14 @@ void LandIce::LayeredFluxDivergenceResidual<EvalT, Traits, ThicknessScalarT>::ev
 */
 
     //computing thickness of the layer at the triangle nodes
-    ThicknessScalarT H0 = H(cell,node0)*dz, H1 = H(cell,node1)*dz, H2 = H(cell,node2)*dz;
+    ThicknessScalarT H0 = H_h(cell,node0)*dz, H1 = H_h(cell,node1)*dz, H2 = H_h(cell,node2)*dz;
 
     const double c0 = c_bot, c1 = c_top;
 
     //computing the vertically averaged velocity at the triangles nodes
-    ScalarT vel0[2] = {c0*vel(cell, node0, 0)+c1*vel(cell, node0p1, 0), c0*vel(cell, node0, 1)+c1*vel(cell, node0p1, 1)},
-        vel1[2] = {c0*vel(cell, node1, 0)+c1*vel(cell, node1p1, 0), c0*vel(cell, node1, 1)+c1*vel(cell, node1p1, 1)},
-        vel2[2] = {c0*vel(cell, node2, 0)+c1*vel(cell, node2p1, 0), c0*vel(cell, node2, 1)+c1*vel(cell, node2p1, 1)};
+    ScalarT vel0[2] = {c0*vel_h(cell, node0, 0)+c1*vel_h(cell, node0p1, 0), c0*vel_h(cell, node0, 1)+c1*vel_h(cell, node0p1, 1)},
+        vel1[2] = {c0*vel_h(cell, node1, 0)+c1*vel_h(cell, node1p1, 0), c0*vel_h(cell, node1, 1)+c1*vel_h(cell, node1p1, 1)},
+        vel2[2] = {c0*vel_h(cell, node2, 0)+c1*vel_h(cell, node2p1, 0), c0*vel_h(cell, node2, 1)+c1*vel_h(cell, node2p1, 1)};
 //*/
 
     //interpolating the thickness and the velocities at the circumcenter
@@ -233,17 +245,19 @@ void LandIce::LayeredFluxDivergenceResidual<EvalT, Traits, ThicknessScalarT>::ev
         e20/2.*(0.75*H2+0.25*H0)*((0.75*vel2[0] + 0.25*vel0[0])*e20_norm[0]+(0.75*vel2[1] + 0.25*vel0[1])*e20_norm[1]);
 
     //Each triangle contributes to the flux through the three voronoi cells centered at the triangle vertices
-    residual(cell,node0) = A0 * flux_div(cell, node0) - (hVel_01 - hVel_20) - hVel0_norm;
-    residual(cell,node1) = A1 * flux_div(cell, node1) - (hVel_12 - hVel_01) - hVel1_norm;
-    residual(cell,node2) = A2 * flux_div(cell, node2) - (hVel_20 - hVel_12) - hVel2_norm;
+    residual_h(cell,node0) = A0 * flux_div_h(cell, node0) - (hVel_01 - hVel_20) - hVel0_norm;
+    residual_h(cell,node1) = A1 * flux_div_h(cell, node1) - (hVel_12 - hVel_01) - hVel1_norm;
+    residual_h(cell,node2) = A2 * flux_div_h(cell, node2) - (hVel_20 - hVel_12) - hVel2_norm;
 
     if (ilayer == lastLayer) { //This corresponds to setting the flux_divergence to zero at the top level.
-      residual(cell,node0p1) = A0 * flux_div(cell, node0p1);
-      residual(cell,node1p1) = A1 * flux_div(cell, node1p1);
-      residual(cell,node2p1) = A2 * flux_div(cell, node2p1);
+      residual_h(cell,node0p1) = A0 * flux_div_h(cell, node0p1);
+      residual_h(cell,node1p1) = A1 * flux_div_h(cell, node1p1);
+      residual_h(cell,node2p1) = A2 * flux_div_h(cell, node2p1);
     }
 
   }
+
+  Kokkos::deep_copy(residual.get_view(),residual_h);
 }
 
 /**********************************************************************
